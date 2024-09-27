@@ -5,24 +5,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from model import MRI3DAutoencoder
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
-
-# Custom dataset class for 3D MRI images
-class MRIDataset(Dataset):
-    def __init__(self, num_samples=100, image_shape=(64, 64, 64)):
-        self.num_samples = num_samples
-        self.image_shape = image_shape
-        # Generate random 3D images for demonstration purposes
-        self.data = np.random.rand(num_samples, 1, *image_shape).astype(np.float32)
-
-    def __len__(self):
-        return self.num_samples
-
-    def __getitem__(self, idx):
-        return torch.from_numpy(self.data[idx])
+from braindec.model import MRI3DAutoencoder
+from braindec.preproc import MRIDataset
 
 
 # Function to calculate PSNR
@@ -74,6 +61,8 @@ def test(model, test_loader, device):
 
 # Main training loop
 def main():
+    project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
+
     # Hyperparameters
     batch_size = 8
     num_epochs = 50
@@ -81,12 +70,13 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Create dataset and split into train, validation, and test sets
-    dataset = MRIDataset(num_samples=100, image_shape=(64, 64, 64))
+    dataset = MRIDataset(project_dir)
     train_size = int(0.7 * len(dataset))
     val_size = int(0.15 * len(dataset))
     test_size = len(dataset) - train_size - val_size
     train_dataset, val_dataset, test_dataset = random_split(
-        dataset, [train_size, val_size, test_size]
+        dataset,
+        [train_size, val_size, test_size],
     )
 
     # Create data loaders

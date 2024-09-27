@@ -22,7 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering",
 ]
-dependencies = ["torch"]
+dependencies = ["torch", "torchvision", "torchaudio", "nimare", "xgboost"]
 dynamic = ["version"]
 
 [project.urls]
@@ -53,29 +53,29 @@ test = [
     "pytest-env",
 ]
 # Aliases
-docs = ["gradec[doc]"]
-devs = ["gradec[dev]"]
-tests = ["gradec[test]"]
-minimum = ["gradec[min]"]
-all = ["gradec[doc,dev,test]"]
+docs = ["braindec[doc]"]
+devs = ["braindec[dev]"]
+tests = ["braindec[test]"]
+minimum = ["braindec[min]"]
+all = ["braindec[doc,dev,test]"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["gradec"]
+packages = ["braindec"]
 exclude = ["temp"]
 
 [tool.hatch.version]
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "gradec/_version.py"
+version-file = "braindec/_version.py"
 
 [tool.flake8]
 max-line-length = 99
-exclude = ["*build/", "gradec/_version.py"]
+exclude = ["*build/", "braindec/_version.py"]
 ignore = ["E203", "E402", "E722", "W503"]
 per-file-ignores = """
     */__init__.py:D401
-    gradec/utils.py:D401
+    braindec/utils.py:D401
 """
 docstring-convention = "numpy"
 
@@ -100,6 +100,6 @@ exclude = '''
     | dist
   )/
   | versioneer.py
-  | gradec/_version.py
+  | braindec/_version.py
 )
 '''

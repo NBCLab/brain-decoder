@@ -3,7 +3,8 @@
 import numpy as np
 import torch
 import xgboost as xgb
-from model import MRI3DAutoencoder
+
+from braindec.model import MRI3DAutoencoder
 
 # Load the trained model
 autoencoder = MRI3DAutoencoder()

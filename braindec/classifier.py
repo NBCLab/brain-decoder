@@ -2,12 +2,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import xgboost as xgb
-from model import MRI3DAutoencoder
 from scipy.stats import randint, uniform
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+
+from braindec.model import MRI3DAutoencoder
 
 
 class LabeledMRIDataset(Dataset):
@@ -116,20 +117,6 @@ def main():
     print(f"Accuracy: {accuracy:.4f}")
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred))
-
-    # Example of using the model for prediction
-    def predict(model, autoencoder, image, device):
-        autoencoder.eval()
-        with torch.no_grad():
-            input_tensor = torch.from_numpy(image).unsqueeze(0).to(device)  # Add batch dimension
-            encoded, _ = autoencoder.encoder(input_tensor)
-            features = encoded.view(1, -1).cpu().numpy()
-            return model.predict(features)[0]
-
-    # Generate a sample image for prediction
-    sample_image = np.random.rand(1, 64, 64, 64).astype(np.float32)
-    predicted_label = predict(best_xgb_clf, autoencoder, sample_image, device)
-    print(f"\nPredicted label for sample image: {predicted_label}")
 
     # Save the trained XGBoost model
     best_xgb_clf.save_model("mri_3d_xgboost_classifier_tuned.json")
