@@ -5,6 +5,7 @@ import torch
 from nimare.extract import fetch_neuroquery, fetch_neurosynth
 from nimare.io import convert_neurosynth_to_dataset
 from nimare.meta.kernel import MKDAKernel
+from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import Dataset
 
 from braindec.utils import get_data_dir
@@ -85,10 +86,11 @@ class MRIDataset(Dataset):
         self.num_samples = len(image_output)
         self.image_shape = image_output[0].get_fdata().shape
 
-        cuboid_mask = create_cuboid_mask(dset.masker.mask_img_.get_fdata())
+        # cuboid_mask = create_cuboid_mask(dset.masker.mask_img_.get_fdata())
+        # data = [trim_image(img.get_fdata(), cuboid_mask) for img in image_output]
 
         # Get the image data
-        data = [trim_image(img.get_fdata(), cuboid_mask) for img in image_output]
+        data = [img.get_fdata() for img in image_output]
         data = np.array(data).astype(np.float32)
         self.data = data[:, np.newaxis, :, :, :]
 
@@ -100,8 +102,16 @@ class MRIDataset(Dataset):
         terms = [term.replace("terms_abstract_tfidf__", "") for term in terms]
         self.labels = np.array(terms)
 
+        # Encode labels to integers
+        self.label_encoder = LabelEncoder()
+        self.encoded_labels = self.label_encoder.fit_transform(self.labels)
+
     def __len__(self):
         return self.num_samples
 
     def __getitem__(self, idx):
-        return self.labels[idx], torch.from_numpy(self.data[idx])
+        return (
+            self.labels[idx],
+            torch.tensor(self.encoded_labels[idx]),
+            torch.from_numpy(self.data[idx]),
+        )
