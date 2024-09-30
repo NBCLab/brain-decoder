@@ -1,5 +1,8 @@
 """Train a model on the BrainDec dataset."""
 
+import os.path as op
+import pickle
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -8,7 +11,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
-from braindec.model import MRI3DAutoencoder
+from braindec.autoencoder.model import MRI3dAutoencoder
 from braindec.preproc import MRIDataset
 
 
@@ -23,14 +26,19 @@ def psnr(original, reconstructed):
 def train(model, train_loader, criterion, optimizer, device):
     model.train()
     train_loss = 0
-    for batch in tqdm(train_loader, desc="Training"):
-        batch = batch.to(device)
+    for labels, images in tqdm(train_loader, desc="Training"):
+        images = images.to(device)
         optimizer.zero_grad()
-        output = model(batch)
-        loss = criterion(output, batch)
+
+        # Forward pass
+        output = model(images)
+
+        loss = criterion(output, images)
         loss.backward()
         optimizer.step()
+
         train_loss += loss.item()
+
     return train_loss / len(train_loader)
 
 
@@ -39,10 +47,10 @@ def validate(model, val_loader, criterion, device):
     model.eval()
     val_loss = 0
     with torch.no_grad():
-        for batch in tqdm(val_loader, desc="Validating"):
-            batch = batch.to(device)
-            output = model(batch)
-            loss = criterion(output, batch)
+        for labels, images in tqdm(val_loader, desc="Validating"):
+            images = images.to(device)
+            output = model(images)
+            loss = criterion(output, images)
             val_loss += loss.item()
     return val_loss / len(val_loader)
 
@@ -52,16 +60,17 @@ def test(model, test_loader, device):
     model.eval()
     psnr_scores = []
     with torch.no_grad():
-        for batch in tqdm(test_loader, desc="Testing"):
-            batch = batch.to(device)
-            output = model(batch)
-            psnr_scores.append(psnr(batch, output).item())
+        for labels, images in tqdm(test_loader, desc="Testing"):
+            images = images.to(device)
+            output = model(images)
+            psnr_scores.append(psnr(images, output).item())
     return np.mean(psnr_scores)
 
 
 # Main training loop
 def main():
     project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
+    data_dir = op.join(project_dir, "data")
 
     # Hyperparameters
     batch_size = 8
@@ -69,8 +78,19 @@ def main():
     learning_rate = 1e-3
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Create dataset and split into train, validation, and test sets
-    dataset = MRIDataset(project_dir)
+    # Create dataset
+    dataset_fn = op.join(data_dir, "dataset.pkl")
+    if op.exists(dataset_fn):
+        with open(dataset_fn, "rb") as f:
+            dataset = pickle.load(f)
+    else:
+        dataset = MRIDataset(data_dir)
+        with open(dataset_fn, "wb") as f:
+            pickle.dump(dataset, f)
+
+    print(f"Number of samples: {len(dataset)}")
+
+    # Split into train, validation, and test sets
     train_size = int(0.7 * len(dataset))
     val_size = int(0.15 * len(dataset))
     test_size = len(dataset) - train_size - val_size
@@ -85,7 +105,7 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
     # Initialize model, loss function, and optimizer
-    model = MRI3DAutoencoder().to(device)
+    model = MRI3dAutoencoder(input_shape=dataset.image_shape, batch_size=batch_size).to(device)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -98,7 +118,8 @@ def main():
         train_losses.append(train_loss)
         val_losses.append(val_loss)
         print(
-            f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+            f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.4f}, "
+            f"Val Loss: {val_loss:.4f}"
         )
 
     # Test the model

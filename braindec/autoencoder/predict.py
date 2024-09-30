@@ -4,10 +4,12 @@ import numpy as np
 import torch
 import xgboost as xgb
 
-from braindec.model import MRI3DAutoencoder
+from braindec.autoencoder.model import MRI3dAutoencoder
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load the trained model
-autoencoder = MRI3DAutoencoder()
+autoencoder = MRI3dAutoencoder()
 autoencoder.load_state_dict(torch.load("mri_3d_autoencoder.pth"))
 
 # Load the trained XGBoost classifier

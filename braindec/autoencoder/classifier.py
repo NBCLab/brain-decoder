@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import torch.nn as nn
 import xgboost as xgb
 from scipy.stats import randint, uniform
 from sklearn.metrics import accuracy_score, classification_report
@@ -8,7 +7,7 @@ from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
-from braindec.model import MRI3DAutoencoder
+from braindec.autoencoder.model import MRI3dAutoencoder
 
 
 class LabeledMRIDataset(Dataset):
@@ -84,7 +83,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load pre-trained autoencoder
-    autoencoder = MRI3DAutoencoder().to(device)
+    autoencoder = MRI3dAutoencoder().to(device)
     autoencoder.load_state_dict(torch.load("mri_3d_autoencoder.pth"))
 
     # Create dataset and data loader

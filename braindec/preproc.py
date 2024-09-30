@@ -11,7 +11,7 @@ from braindec.utils import get_data_dir
 
 
 def _get_dataset(dset_nm, data_dir):
-    data_dir = get_data_dir(op.join(data_dir, "data", dset_nm))
+    data_dir = get_data_dir(op.join(data_dir))
 
     if dset_nm == "neurosynth":
         files = fetch_neurosynth(
@@ -43,6 +43,39 @@ def _get_dataset(dset_nm, data_dir):
     return dset
 
 
+def create_cuboid_mask(brain_mask):
+    # Step 1: Find the bounding box of the brain mask
+    nonzero = np.nonzero(brain_mask)
+    min_coords = np.min(nonzero, axis=1)
+    max_coords = np.max(nonzero, axis=1)
+
+    # Step 2: Calculate dimensions and pad to nearest power of 2 for each axis
+    dims = max_coords - min_coords + 1
+    target_dims = 2 ** np.ceil(np.log2(dims)).astype(int)
+
+    # Step 3: Create the final cuboid mask
+    cuboid_mask = np.zeros(target_dims, dtype=bool)
+
+    # Calculate padding for each dimension
+    pad_width = [(0, target_dim - dim) for target_dim, dim in zip(target_dims, dims)]
+
+    # Extract and pad the relevant part of the brain mask
+    extracted_brain = brain_mask[
+        min_coords[0] : max_coords[0] + 1,
+        min_coords[1] : max_coords[1] + 1,
+        min_coords[2] : max_coords[2] + 1,
+    ]
+    padded_brain = np.pad(extracted_brain, pad_width, mode="constant")
+
+    cuboid_mask[:] = padded_brain
+
+    return cuboid_mask
+
+
+def trim_image(image, mask):
+    return image[mask]
+
+
 class MRIDataset(Dataset):
     def __init__(self, project_dir):
         dset = _get_dataset("neurosynth", project_dir)
@@ -52,9 +85,12 @@ class MRIDataset(Dataset):
         self.num_samples = len(image_output)
         self.image_shape = image_output[0].get_fdata().shape
 
+        cuboid_mask = create_cuboid_mask(dset.masker.mask_img_.get_fdata())
+
         # Get the image data
-        data = [img.get_fdata() for img in image_output]
-        self.data = np.array(data).astype(np.float32)
+        data = [trim_image(img.get_fdata(), cuboid_mask) for img in image_output]
+        data = np.array(data).astype(np.float32)
+        self.data = data[:, np.newaxis, :, :, :]
 
         # Get the image features
         tfidf_columns = dset.annotations.filter(like="terms_abstract_tfidf__")
