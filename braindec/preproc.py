@@ -1,6 +1,8 @@
 import os.path as op
+from collections import Counter
 
 import numpy as np
+import pandas as pd
 import torch
 from nimare.extract import fetch_neuroquery, fetch_neurosynth
 from nimare.io import convert_neurosynth_to_dataset
@@ -78,8 +80,11 @@ def trim_image(image, mask):
 
 
 class MRIDataset(Dataset):
-    def __init__(self, project_dir):
-        dset = _get_dataset("neurosynth", project_dir)
+    def __init__(self, project_dir, dataset="neurosynth"):
+        self.project_dir = project_dir
+        self.dataset = dataset
+
+        dset = _get_dataset(dataset, project_dir)
         kernel = MKDAKernel()
         image_output = kernel.transform(dset, return_type="image")
 
@@ -95,12 +100,14 @@ class MRIDataset(Dataset):
         self.data = data[:, np.newaxis, :, :, :]
 
         # Get the image features
-        tfidf_columns = dset.annotations.filter(like="terms_abstract_tfidf__")
+        filtered_df = self._filter_terms(dset.annotations)
 
         # Get the most important term for each image
-        terms = tfidf_columns.idxmax(axis=1).to_list()
+        terms = filtered_df.idxmax(axis=1).to_list()
         terms = [term.replace("terms_abstract_tfidf__", "") for term in terms]
         self.labels = np.array(terms)
+
+        self.num_classes = len(np.unique(self.labels))
 
         # Encode labels to integers
         self.label_encoder = LabelEncoder()
@@ -115,3 +122,26 @@ class MRIDataset(Dataset):
             torch.tensor(self.encoded_labels[idx]),
             torch.from_numpy(self.data[idx]),
         )
+
+    def _filter_terms(self, data_df):
+        # Get manual annotation of functional terms
+        classification_df = pd.read_csv(
+            op.join(
+                self.project_dir,
+                self.dataset,
+                "source-neurosynth_desc-term3228_classification.csv",
+            )
+        )
+        functional_mask = (classification_df["Classification"] == "Functional").values
+
+        # Filter the dataframe to keep only the functional terms
+        functional_df = data_df.filter(like="terms_abstract_tfidf__").loc[:, functional_mask]
+
+        # Get the term with the highest value for each row
+        terms = functional_df.idxmax(axis=1).to_list()
+        term_counts = Counter(terms)
+
+        # Filter terms with count greater than 30
+        filtered_terms = [term for term, count in term_counts.items() if count > 30]
+        filtered_columns = [col for col in functional_df.columns if col in filtered_terms]
+        return functional_df[filtered_columns]

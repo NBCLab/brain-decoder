@@ -8,11 +8,45 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, SubsetRandomSampler, random_split
 from tqdm import tqdm
 
 from braindec.model import MRI3dCNN
 from braindec.preproc import MRIDataset
+
+
+def create_balanced_loaders(dataset, batch_size, train_size=0.7, val_size=0.15):
+    # Get the targets from the dataset
+    targets = dataset.encoded_labels
+
+    # First split: train+val and test
+    train_val_idx, test_idx = train_test_split(
+        np.arange(len(targets)),
+        test_size=1 - train_size - val_size,
+        stratify=targets,
+        random_state=42,
+    )
+
+    # Second split: train and val
+    train_idx, val_idx = train_test_split(
+        train_val_idx,
+        test_size=val_size / (train_size + val_size),
+        stratify=[targets[i] for i in train_val_idx],
+        random_state=42,
+    )
+
+    # Create samplers
+    train_sampler = SubsetRandomSampler(train_idx)
+    val_sampler = SubsetRandomSampler(val_idx)
+    test_sampler = SubsetRandomSampler(test_idx)
+
+    # Create data loaders
+    train_loader = DataLoader(dataset, batch_size=batch_size, sampler=train_sampler)
+    val_loader = DataLoader(dataset, batch_size=batch_size, sampler=val_sampler)
+    test_loader = DataLoader(dataset, batch_size=batch_size, sampler=test_sampler)
+
+    return train_loader, val_loader, test_loader
 
 
 # Training function
@@ -118,24 +152,12 @@ def main():
 
     print(f"Number of samples: {len(dataset)}")
 
-    # Split into train, validation, and test sets
-    train_size = int(0.7 * len(dataset))
-    val_size = int(0.15 * len(dataset))
-    test_size = len(dataset) - train_size - val_size
-    train_dataset, val_dataset, test_dataset = random_split(
-        dataset,
-        [train_size, val_size, test_size],
-    )
+    # Create data loaders for training, validation, and testing
+    train_loader, val_loader, test_loader = create_balanced_loaders(dataset, batch_size=32)
 
-    # Create data loaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
-
-    num_classes = len(np.unique(dataset.labels))
     # Initialize model, loss function, and optimizer
     model = MRI3dCNN(
-        num_classes=num_classes,
+        num_classes=dataset.num_classes,
         input_shape=dataset.image_shape,
         batch_size=batch_size,
     ).to(device)
