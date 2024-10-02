@@ -1,5 +1,6 @@
 # Project dirs
 /data
+/results
 
 # VS Code
 .vscode/

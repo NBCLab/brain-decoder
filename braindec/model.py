@@ -29,7 +29,7 @@ class Encoder3D(nn.Module):
                     ),
                     nn.BatchNorm3d(out_channels),
                     nn.ReLU(),
-                    nn.MaxPool3d(kernel_size=2, stride=2),  # Downsample by 2
+                    nn.MaxPool3d(kernel_size=2, stride=2),  # Downsample by 2x2x2
                 ]
             )
             in_channels = out_channels
@@ -42,7 +42,7 @@ class Encoder3D(nn.Module):
 
 
 class Bottleneck(nn.Module):
-    def __init__(self, input_size, hidden_layers=(1024, 512, 256)):
+    def __init__(self, input_size, hidden_layers=(1024, 512, 256), dropout=0.2):
         super(Bottleneck, self).__init__()
 
         bottleneck_layers = []
@@ -51,6 +51,7 @@ class Bottleneck(nn.Module):
                 [
                     nn.Linear(input_size, hidden_layer),
                     nn.ReLU(),
+                    nn.Dropout(dropout),
                 ]
             )
             input_size = hidden_layer
@@ -69,9 +70,10 @@ class MRI3dCNN(nn.Module):
         num_classes=3,
         input_shape=(91, 109, 91),
         channels=(16, 32, 64),
-        hidden_layers=(512, 256, 128, 64),
+        hidden_layers=(1024, 512, 256),
         kernel_size=3,
         stride=1,
+        dropout=0.2,
     ):
         super(MRI3dCNN, self).__init__()
 
@@ -83,6 +85,7 @@ class MRI3dCNN(nn.Module):
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = kernel_size // 2
+        self.dropout = dropout
 
         self.encoder = Encoder3D(
             channels=self.channels,
@@ -102,8 +105,18 @@ class MRI3dCNN(nn.Module):
         )
 
         # Add a bottleneck layer
-        self.bottleneck = Bottleneck(flattened_size, hidden_layers=self.hidden_layers)
+        self.bottleneck = Bottleneck(
+            flattened_size,
+            hidden_layers=self.hidden_layers,
+            dropout=self.dropout,
+        )
 
+        """
+        self.out = nn.Sequential(
+            nn.Linear(self.hidden_layers[-1], num_classes),
+            nn.Sigmoid(),
+        )
+        """
         self.out = nn.Linear(self.hidden_layers[-1], num_classes)
 
     def forward(self, x):
@@ -114,6 +127,7 @@ class MRI3dCNN(nn.Module):
         x = self.bottleneck(x)
 
         # Apply output layer to match the number of classes
+        # return F.softmax(self.out(x), dim=1)  # Return the probability of each class
         return self.out(x)
 
     def compute_output_shape(self, input_shape):

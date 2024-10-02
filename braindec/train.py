@@ -1,19 +1,67 @@
 """Train and evaluate a model on the BrainDec dataset."""
 
+import os
 import os.path as op
 import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader, SubsetRandomSampler, random_split
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data import DataLoader, SubsetRandomSampler
 from tqdm import tqdm
 
 from braindec.model import MRI3dCNN
 from braindec.preproc import MRIDataset
+
+# from torchsummary import summary
+
+
+def _plot_training_history(
+    train_losses,
+    train_accs,
+    train_roc_aucs,
+    val_losses,
+    val_accs,
+    val_roc_aucs,
+    out_dir,
+):
+    # Plot training and validation losses
+    plt.figure(figsize=(15, 5))
+    plt.subplot(1, 3, 1)
+    plt.plot(train_losses, label="Train Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.title("Training and Validation Loss")
+
+    # Plot training and validation accuracies
+    plt.subplot(1, 3, 2)
+    plt.plot(train_accs, label="Train Accuracy")
+    plt.plot(val_accs, label="Validation Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy (%)")
+    plt.legend()
+    plt.title("Training and Validation Accuracy")
+
+    plt.subplot(1, 3, 3)
+    plt.plot(train_roc_aucs, label="Train ROC AUC")
+    plt.plot(val_roc_aucs, label="Validation ROC AUC")
+    plt.xlabel("Epoch")
+    plt.ylabel("ROC AUC")
+    plt.legend()
+    plt.title("Training and Validation ROC AUC")
+
+    plt.tight_layout()
+    plt.savefig(op.join(out_dir, "training_history.png"))
+    plt.show()
 
 
 def create_balanced_loaders(dataset, batch_size, train_size=0.7, val_size=0.15):
@@ -55,26 +103,34 @@ def train(model, train_loader, criterion, optimizer, device):
     train_loss = 0
     correct = 0
     total = 0
+    targets, predictions = [], []
     for labels, encoded_labels, images in tqdm(train_loader, desc="Training"):
         # labels = labels.to(device)
         encoded_labels = encoded_labels.to(device)
         images = images.to(device)
-        optimizer.zero_grad()
 
-        # Forward pass
-        output = model(images)
+        optimizer.zero_grad()  # We need to reset all gradients
 
-        loss = criterion(output, encoded_labels)
-        loss.backward()
-        optimizer.step()
+        output = model(images)  # Forward pass
+        loss = criterion(output, encoded_labels)  # Calculate the loss
+        loss.backward()  # Backpropagate the loss
+
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
+        optimizer.step()  # Update the weights
 
         train_loss += loss.item()
-        _, predicted = output.max(1)
+        _, predicted = output.max(1)  # predictions
+
         total += encoded_labels.size(0)
         correct += predicted.eq(encoded_labels).sum().item()
+        targets.extend(encoded_labels.cpu().numpy())
+        predictions.extend(F.softmax(output, dim=1).detach().cpu().numpy())
 
+    targets = np.array(targets)
+    predictions = np.array(predictions)
+    roc_auc = roc_auc_score(targets, predictions, average="macro", multi_class="ovr")
     accuracy = 100.0 * correct / total
-    return train_loss / len(train_loader), accuracy
+    return train_loss / len(train_loader), accuracy, roc_auc
 
 
 # Validation function
@@ -83,6 +139,7 @@ def validate(model, val_loader, criterion, device):
     val_loss = 0
     correct = 0
     total = 0
+    targets, predictions = [], []
     with torch.no_grad():
         for labels, encoded_labels, images in tqdm(val_loader, desc="Validating"):
             # labels = labels.to(device)
@@ -92,14 +149,20 @@ def validate(model, val_loader, criterion, device):
             output = model(images)
 
             loss = criterion(output, encoded_labels)
-            val_loss += loss.item()
 
-            _, predicted = output.max(1)
+            val_loss += loss.item()
+            _, predicted = output.max(1)  # predictions
+
             total += encoded_labels.size(0)
             correct += predicted.eq(encoded_labels).sum().item()
+            targets.extend(encoded_labels.cpu().numpy())
+            predictions.extend(F.softmax(output, dim=1).detach().cpu().numpy())
 
+    targets = np.array(targets)
+    predictions = np.array(predictions)
+    roc_auc = roc_auc_score(targets, predictions, average="macro", multi_class="ovr")
     accuracy = 100.0 * correct / total
-    return val_loss / len(val_loader), accuracy
+    return val_loss / len(val_loader), accuracy, roc_auc
 
 
 # Test function
@@ -107,6 +170,7 @@ def test(model, test_loader, device):
     model.eval()
     correct = 0
     total = 0
+    targets, predictions = [], []
     with torch.no_grad():
         for labels, encoded_labels, images in tqdm(test_loader, desc="Testing"):
             # labels = labels.to(device)
@@ -116,15 +180,24 @@ def test(model, test_loader, device):
             _, predicted = output.max(1)
             total += encoded_labels.size(0)
             correct += predicted.eq(encoded_labels).sum().item()
+            targets.extend(encoded_labels.cpu().numpy())
+            predictions.extend(F.softmax(output, dim=1).detach().cpu().numpy())
 
+    targets = np.array(targets)
+    predictions = np.array(predictions)
+    roc_auc = roc_auc_score(targets, predictions, average="macro", multi_class="ovr")
     accuracy = 100.0 * correct / total
-    return accuracy
+    return accuracy, roc_auc
 
 
 # Main training loop
 def main():
     project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
     data_dir = op.join(project_dir, "data")
+    out_dir = op.join(project_dir, "results")
+    os.makedirs(out_dir, exist_ok=True)
+
+    best_model_fn = op.join(out_dir, "best_model.pth")
 
     # Hyperparameters
     batch_size = 64
@@ -153,7 +226,7 @@ def main():
     print(f"Number of samples: {len(dataset)}")
 
     # Create data loaders for training, validation, and testing
-    train_loader, val_loader, test_loader = create_balanced_loaders(dataset, batch_size=32)
+    train_loader, val_loader, test_loader = create_balanced_loaders(dataset, batch_size=batch_size)
 
     # Initialize model, loss function, and optimizer
     model = MRI3dCNN(
@@ -163,54 +236,77 @@ def main():
     ).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    # scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
+    # summary(model, (1, 28, 28))
 
     # Training loop
+    best_val_loss = float("inf")
+    patience = 10
+    counter = 0
     train_losses = []
-    train_accuracies = []
+    train_accs = []
+    train_roc_aucs = []
     val_losses = []
-    val_accuracies = []
+    val_accs = []
+    val_roc_aucs = []
     for epoch in range(num_epochs):
-        train_loss, train_accuracy = train(model, train_loader, criterion, optimizer, device)
-        val_loss, val_accuracy = validate(model, val_loader, criterion, device)
+        train_loss, train_acc, train_roc_auc = train(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+        )
+        val_loss, val_acc, val_roc_auc = validate(model, val_loader, criterion, device)
+        # scheduler.step(val_loss)
+
         train_losses.append(train_loss)
-        train_accuracies.append(train_accuracy)
+        train_accs.append(train_acc)
+        train_roc_aucs.append(train_roc_auc)
         val_losses.append(val_loss)
-        val_accuracies.append(val_accuracy)
+        val_accs.append(val_acc)
+        val_roc_aucs.append(val_roc_auc)
         print(
             f"Epoch {epoch + 1}/{num_epochs}, "
-            f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%, "
-            f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%"
+            f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_acc:.2f}%, "
+            f"Train ROC AUC: {train_roc_auc:.4f}, Val Loss: {val_loss:.4f}, "
+            f"Val Accuracy: {val_acc:.2f}%, Val ROC AUC: {val_roc_auc:.4f}"
         )
 
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            counter = 0
+            torch.save(model.state_dict(), best_model_fn)
+        else:
+            counter += 1
+            if counter >= patience:
+                print(f"Early stopping triggered after {epoch + 1} epochs")
+                break
+
     # Test the model
-    test_accuracy = test(model, test_loader, device)
-    print(f"Test Accuracy: {test_accuracy:.2f}%")
+    test_acc, test_roc_auc = test(model, test_loader, device)
+    print(f"Test Accuracy: {test_acc:.2f}%, Test ROC AUC: {test_roc_auc:.4f}")
 
-    # Save the trained model
-    torch.save(model.state_dict(), "mri_3d_cnn.pth")
+    # Plot training history
+    _plot_training_history(
+        train_losses,
+        train_accs,
+        train_roc_aucs,
+        val_losses,
+        val_accs,
+        val_roc_aucs,
+        out_dir,
+    )
 
-    # Plot training and validation losses
-    plt.figure(figsize=(10, 5))
-    plt.subplot(1, 2, 1)
-    plt.plot(train_losses, label="Train Loss")
-    plt.plot(val_losses, label="Validation Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.title("Training and Validation Loss")
-
-    # Plot training and validation accuracies
-    plt.subplot(1, 2, 2)
-    plt.plot(train_accuracies, label="Train Accuracy")
-    plt.plot(val_accuracies, label="Validation Accuracy")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy (%)")
-    plt.legend()
-    plt.title("Training and Validation Accuracy")
-
-    plt.tight_layout()
-    plt.savefig("training_history.png")
-    plt.show()
+    # Save results
+    results_df = pd.DataFrame()
+    results_df["train_loss"] = train_losses
+    results_df["train_acc"] = train_accs
+    results_df["train_roc_auc"] = train_roc_aucs
+    results_df["val_loss"] = val_losses
+    results_df["val_acc"] = val_accs
+    results_df["val_roc_auc"] = val_roc_aucs
+    results_df.to_csv(op.join(out_dir, "results.csv"), index=False)
 
 
 if __name__ == "__main__":
