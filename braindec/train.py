@@ -13,7 +13,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from tqdm import tqdm
 
@@ -97,6 +96,37 @@ def create_balanced_loaders(dataset, batch_size, train_size=0.7, val_size=0.15):
     return train_loader, val_loader, test_loader
 
 
+def create_random_loaders(dataset, batch_size, train_size=0.7, val_size=0.15):
+    # Get the targets from the dataset
+    targets = dataset.labels
+
+    # First split: train+val and test
+    train_val_idx, test_idx = train_test_split(
+        np.arange(len(targets)),
+        test_size=1 - train_size - val_size,
+        random_state=42,
+    )
+
+    # Second split: train and val
+    train_idx, val_idx = train_test_split(
+        train_val_idx,
+        test_size=val_size / (train_size + val_size),
+        random_state=42,
+    )
+
+    # Create samplers
+    train_sampler = SubsetRandomSampler(train_idx)
+    val_sampler = SubsetRandomSampler(val_idx)
+    test_sampler = SubsetRandomSampler(test_idx)
+
+    # Create data loaders
+    train_loader = DataLoader(dataset, batch_size=batch_size, sampler=train_sampler)
+    val_loader = DataLoader(dataset, batch_size=batch_size, sampler=val_sampler)
+    test_loader = DataLoader(dataset, batch_size=batch_size, sampler=test_sampler)
+
+    return train_loader, val_loader, test_loader
+
+
 # Training function
 def train(model, train_loader, criterion, optimizer, device):
     model.train()
@@ -104,26 +134,27 @@ def train(model, train_loader, criterion, optimizer, device):
     correct = 0
     total = 0
     targets, predictions = [], []
-    for labels, encoded_labels, images in tqdm(train_loader, desc="Training"):
+    for labels, soft_labels, true_labels, images in tqdm(train_loader, desc="Training"):
         # labels = labels.to(device)
-        encoded_labels = encoded_labels.to(device)
+        soft_labels = soft_labels.to(device)
+        true_labels = true_labels.to(device)
         images = images.to(device)
 
         optimizer.zero_grad()  # We need to reset all gradients
 
         output = model(images)  # Forward pass
-        loss = criterion(output, encoded_labels)  # Calculate the loss
+        loss = criterion(F.log_softmax(output, dim=1), soft_labels)  # Calculate the loss
         loss.backward()  # Backpropagate the loss
 
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
         optimizer.step()  # Update the weights
 
         train_loss += loss.item()
-        _, predicted = output.max(1)  # predictions
+        _, predicted_labels = output.max(1)  # predictions
 
-        total += encoded_labels.size(0)
-        correct += predicted.eq(encoded_labels).sum().item()
-        targets.extend(encoded_labels.cpu().numpy())
+        total += true_labels.size(0)
+        correct += predicted_labels.eq(true_labels).sum().item()
+        targets.extend(true_labels.cpu().numpy())
         predictions.extend(F.softmax(output, dim=1).detach().cpu().numpy())
 
     targets = np.array(targets)
@@ -141,21 +172,21 @@ def validate(model, val_loader, criterion, device):
     total = 0
     targets, predictions = [], []
     with torch.no_grad():
-        for labels, encoded_labels, images in tqdm(val_loader, desc="Validating"):
-            # labels = labels.to(device)
-            encoded_labels = encoded_labels.to(device)
+        for labels, soft_labels, true_labels, images in tqdm(val_loader, desc="Validating"):
+            soft_labels = soft_labels.to(device)
+            true_labels = true_labels.to(device)
             images = images.to(device)
 
             output = model(images)
 
-            loss = criterion(output, encoded_labels)
+            loss = criterion(F.log_softmax(output, dim=1), soft_labels)
 
             val_loss += loss.item()
-            _, predicted = output.max(1)  # predictions
+            _, predicted_labels = output.max(1)  # predictions
 
-            total += encoded_labels.size(0)
-            correct += predicted.eq(encoded_labels).sum().item()
-            targets.extend(encoded_labels.cpu().numpy())
+            total += true_labels.size(0)
+            correct += predicted_labels.eq(true_labels).sum().item()
+            targets.extend(true_labels.cpu().numpy())
             predictions.extend(F.softmax(output, dim=1).detach().cpu().numpy())
 
     targets = np.array(targets)
@@ -172,15 +203,17 @@ def test(model, test_loader, device):
     total = 0
     targets, predictions = [], []
     with torch.no_grad():
-        for labels, encoded_labels, images in tqdm(test_loader, desc="Testing"):
-            # labels = labels.to(device)
+        for labels, soft_labels, true_labels, images in tqdm(test_loader, desc="Testing"):
+            soft_labels = soft_labels.to(device)
+            true_labels = true_labels.to(device)
             images = images.to(device)
 
             output = model(images)
-            _, predicted = output.max(1)
-            total += encoded_labels.size(0)
-            correct += predicted.eq(encoded_labels).sum().item()
-            targets.extend(encoded_labels.cpu().numpy())
+            _, predicted_labels = output.max(1)  # predictions
+
+            total += true_labels.size(0)
+            correct += predicted_labels.eq(true_labels).sum().item()
+            targets.extend(true_labels.cpu().numpy())
             predictions.extend(F.softmax(output, dim=1).detach().cpu().numpy())
 
     targets = np.array(targets)
@@ -227,6 +260,7 @@ def main():
 
     # Create data loaders for training, validation, and testing
     train_loader, val_loader, test_loader = create_balanced_loaders(dataset, batch_size=batch_size)
+    # train_loader, val_loader, test_loader = create_random_loaders(dataset, batch_size=batch_size)
 
     # Initialize model, loss function, and optimizer
     model = MRI3dCNN(
@@ -234,9 +268,13 @@ def main():
         input_shape=dataset.image_shape,
         batch_size=batch_size,
     ).to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # criterion = nn.CrossEntropyLoss() # for hard labels
+    # criterion = nn.BCELoss() # when using sigmoid in the output layer
+    criterion = nn.KLDivLoss(reduction="batchmean")
+
     # scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     # summary(model, (1, 28, 28))
 
     # Training loop

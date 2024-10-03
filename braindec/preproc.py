@@ -7,7 +7,7 @@ import torch
 from nimare.extract import fetch_neuroquery, fetch_neurosynth
 from nimare.io import convert_neurosynth_to_dataset
 from nimare.meta.kernel import MKDAKernel
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, normalize
 from torch.utils.data import Dataset
 
 from braindec.utils import get_data_dir
@@ -85,7 +85,7 @@ class MRIDataset(Dataset):
         self.dataset = dataset
 
         dset = _get_dataset(dataset, project_dir)
-        kernel = MKDAKernel()
+        kernel = MKDAKernel()  # Replace by peark2image
         image_output = kernel.transform(dset, return_type="image")
 
         self.num_samples = len(image_output)
@@ -108,6 +108,7 @@ class MRIDataset(Dataset):
         self.labels = np.array(terms)
 
         self.num_classes = len(np.unique(self.labels))
+        self.soft_labels = normalize(filtered_df.to_numpy(), norm="l1", axis=1)
 
         # Encode labels to integers
         self.label_encoder = LabelEncoder()
@@ -119,6 +120,7 @@ class MRIDataset(Dataset):
     def __getitem__(self, idx):
         return (
             self.labels[idx],
+            torch.tensor(self.soft_labels[idx]),
             torch.tensor(self.encoded_labels[idx]),
             torch.from_numpy(self.data[idx]),
         )
