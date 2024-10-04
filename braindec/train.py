@@ -233,9 +233,9 @@ def main():
     best_model_fn = op.join(out_dir, "best_model.pth")
 
     # Hyperparameters
-    batch_size = 64
+    batch_size = 128
     num_epochs = 50
-    learning_rate = 1e-3
+    learning_rate = 1e-4
 
     if torch.backends.mps.is_available() and torch.backends.mps.is_built():
         device = torch.device("cpu")  # Use CPU as MPS doesn't support max_pool3d_with_indices
@@ -267,11 +267,16 @@ def main():
         num_classes=dataset.num_classes,
         input_shape=dataset.image_shape,
         batch_size=batch_size,
+        dropout=0.5,
     ).to(device)
+
+    # Get the number of parameters
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"Total number of parameters: {num_params}")
 
     # criterion = nn.CrossEntropyLoss() # for hard labels
     # criterion = nn.BCELoss() # when using sigmoid in the output layer
-    criterion = nn.KLDivLoss(reduction="batchmean")
+    criterion = nn.KLDivLoss(reduction="batchmean")  # for soft labels
 
     # scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
