@@ -22,7 +22,14 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering",
 ]
-dependencies = ["torch", "torchvision", "torchaudio", "nimare", "xgboost"]
+dependencies = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "nimare",
+    "xgboost",
+    "transformers",
+]
 dynamic = ["version"]
 
 [project.urls]

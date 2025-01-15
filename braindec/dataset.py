@@ -7,10 +7,75 @@ import torch
 from nimare.extract import fetch_neuroquery, fetch_neurosynth
 from nimare.io import convert_neurosynth_to_dataset
 from nimare.meta.kernel import MKDAKernel
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, normalize
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 
 from braindec.utils import get_data_dir
+
+
+def create_balanced_loaders(dataset, batch_size, train_size=0.7, val_size=0.15):
+    # Get the targets from the dataset
+    targets = dataset.encoded_labels
+
+    # First split: train+val and test
+    train_val_idx, test_idx = train_test_split(
+        np.arange(len(targets)),
+        test_size=1 - train_size - val_size,
+        stratify=targets,
+        random_state=42,
+    )
+
+    # Second split: train and val
+    train_idx, val_idx = train_test_split(
+        train_val_idx,
+        test_size=val_size / (train_size + val_size),
+        stratify=[targets[i] for i in train_val_idx],
+        random_state=42,
+    )
+
+    # Create samplers
+    train_sampler = SubsetRandomSampler(train_idx)
+    val_sampler = SubsetRandomSampler(val_idx)
+    test_sampler = SubsetRandomSampler(test_idx)
+
+    # Create data loaders
+    train_loader = DataLoader(dataset, batch_size=batch_size, sampler=train_sampler)
+    val_loader = DataLoader(dataset, batch_size=batch_size, sampler=val_sampler)
+    test_loader = DataLoader(dataset, batch_size=batch_size, sampler=test_sampler)
+
+    return train_loader, val_loader, test_loader
+
+
+def create_random_loaders(dataset, batch_size, train_size=0.7, val_size=0.15):
+    # Get the targets from the dataset
+    targets = dataset.labels
+
+    # First split: train+val and test
+    train_val_idx, test_idx = train_test_split(
+        np.arange(len(targets)),
+        test_size=1 - train_size - val_size,
+        random_state=42,
+    )
+
+    # Second split: train and val
+    train_idx, val_idx = train_test_split(
+        train_val_idx,
+        test_size=val_size / (train_size + val_size),
+        random_state=42,
+    )
+
+    # Create samplers
+    train_sampler = SubsetRandomSampler(train_idx)
+    val_sampler = SubsetRandomSampler(val_idx)
+    test_sampler = SubsetRandomSampler(test_idx)
+
+    # Create data loaders
+    train_loader = DataLoader(dataset, batch_size=batch_size, sampler=train_sampler)
+    val_loader = DataLoader(dataset, batch_size=batch_size, sampler=val_sampler)
+    test_loader = DataLoader(dataset, batch_size=batch_size, sampler=test_sampler)
+
+    return train_loader, val_loader, test_loader
 
 
 def _get_dataset(dset_nm, data_dir):

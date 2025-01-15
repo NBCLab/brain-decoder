@@ -1,11 +1,18 @@
 """Model"""
 
+import numpy as np
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class Flatten(nn.Module):
     def forward(self, input):
         return input.view(input.size(0), -1)
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 class Encoder3D(nn.Module):
@@ -148,3 +155,115 @@ class MRI3dCNN(nn.Module):
                 output_shape = [output_shape[0], D_out, H_out, W_out]
 
         return output_shape
+
+
+class ResidualHead(nn.Module):
+    def __init__(
+        self,
+        dim,
+        dropout,
+    ):
+        super().__init__()
+        self.gelu = nn.GELU()
+        self.fc = nn.Linear(dim, dim)
+        self.dropout = nn.Dropout(dropout)
+        self.layer_norm = nn.LayerNorm(dim)
+
+    def forward(self, x):
+        out = self.fc(x)
+        out = self.gelu(out)
+        out = self.dropout(out)
+        out = x + out
+        out = self.layer_norm(out)
+        return out
+
+
+class ProjectionHead(nn.Module):
+    def __init__(
+        self,
+        embedding_dim,
+        output_dim,
+        dropout,
+    ):
+        super().__init__()
+        self.projection = nn.Linear(embedding_dim, output_dim)
+        self.gelu = nn.GELU()
+        self.fc = nn.Linear(output_dim, output_dim)
+        self.dropout = nn.Dropout(dropout)
+        self.layer_norm = nn.LayerNorm(output_dim)
+
+    def forward(self, x):
+        projected = self.projection(x)
+        x = self.gelu(projected)
+        x = self.fc(x)
+        x = self.dropout(x)
+        x = x + projected
+        x = self.layer_norm(x)
+        return x
+
+
+class ImageModel(nn.Module):
+    def __init__(self, output_dim, dropout):
+        super().__init__()
+
+        self.model = (
+            nn.Sequential(
+                ResidualHead(output_dim, dropout=dropout),
+                ResidualHead(output_dim, dropout=dropout),
+                ResidualHead(output_dim, dropout=dropout),
+            ),
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class TextModel(nn.Module):
+    def __init__(self, embedding_dim, output_dim, dropout):
+        super().__init__()
+
+        self.model = (
+            nn.Sequential(
+                ProjectionHead(embedding_dim, output_dim, dropout=dropout),
+                ResidualHead(output_dim, dropout=dropout),
+                ResidualHead(output_dim, dropout=dropout),
+            ),
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class CLIP(nn.Module):
+    def __init__(
+        self,
+        embedding_dim,
+        output_dim=512,
+        dropout=0.1,
+        logit_scale=np.log(1 / 0.07),
+        logit_bias=None,
+    ):
+        super().__init__()
+
+        self.image_model = ImageModel(output_dim, dropout)
+        self.text_model = TextModel(embedding_dim, output_dim, dropout)
+        self.logit_scale = nn.Parameter(torch.ones([]) * logit_scale)
+        self.logit_bias = nn.Parameter(torch.ones([]) * logit_bias) if logit_bias else None
+
+    def encode_image(self, image):  # DiFuMo
+        return self.image_model(image)
+
+    def encode_text(self, text):  # Embeddings
+        return self.text_model(text)
+
+    def forward(self, image, text):
+        image_embeddings = self.encode_image(image)
+        print(f"image_embeddings shape: {image_embeddings.shape}")
+
+        text_embeddings = self.encode_text(text)
+        print(f"text_embeddings shape: {text_embeddings.shape}")
+
+        image_embeddings = image_embeddings / image_embeddings.norm(dim=-1, keepdim=True)
+        text_embeddings = text_embeddings / text_embeddings.norm(dim=-1, keepdim=True)
+
+        return image_embeddings, text_embeddings

@@ -2,6 +2,8 @@
 
 import os
 
+import torch
+
 
 def get_data_dir(data_dir=None):
     """Get path to gradec data directory.
@@ -31,3 +33,12 @@ def get_data_dir(data_dir=None):
         os.makedirs(data_dir)
 
     return data_dir
+
+
+def _get_device():
+    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        return torch.device("mps")  # Use MPS for mac
+    elif torch.cuda.is_available():
+        return torch.device("cuda")  # Use CUDA for Nvidia GPUs
+    else:
+        return torch.device("cpu")  # Default to CPU
