@@ -171,14 +171,19 @@ class TextEmbedding:
 
 
 class ImageEmbedding:
-    def __init__(self, n_jobs: int = -1):
+    def __init__(self, data_dir: str = None, n_jobs: int = -1):
         """
         Initialize the image embedding generator with specified model.
 
         Args:
             model_name: Name of the DeiT model to use
         """
-        difumo = datasets.fetch_atlas_difumo(dimension=512, resolution_mm=2, legacy_format=False)
+        difumo = datasets.fetch_atlas_difumo(
+            dimension=512,
+            resolution_mm=2,
+            legacy_format=False,
+            data_dir=data_dir,
+        )
         self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps)
         self.n_jobs = n_jobs
 
