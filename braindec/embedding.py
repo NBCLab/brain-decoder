@@ -171,7 +171,7 @@ class TextEmbedding:
 
 
 class ImageEmbedding:
-    def __init__(self):
+    def __init__(self, n_jobs: int = -1):
         """
         Initialize the image embedding generator with specified model.
 
@@ -180,6 +180,7 @@ class ImageEmbedding:
         """
         difumo = datasets.fetch_atlas_difumo(dimension=512, resolution_mm=2, legacy_format=False)
         self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps)
+        self.n_jobs = n_jobs
 
     def process_single_image(self, image, masker):
         """Process a single image using the provided masker
@@ -229,7 +230,7 @@ class ImageEmbedding:
         kernel = MKDAKernel()
         self.images = kernel.transform(dset, return_type="image")
 
-        return self.parallel_image_masking(self.images, self.masker)
+        return self.parallel_image_masking(self.images, self.masker, n_jobs=self.n_jobs)
 
     def __call__(self, dset: Dataset) -> np.ndarray:
         """
