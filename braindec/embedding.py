@@ -184,10 +184,10 @@ class ImageEmbedding:
             legacy_format=False,
             data_dir=data_dir,
         )
-        self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps)
+        self.masker_parc = MultiNiftiMapsMasker(maps_img=difumo.maps)
         self.n_jobs = n_jobs
 
-    def process_single_image(self, image, masker):
+    def process_single_image(self, image_arr):
         """Process a single image using the provided masker
 
         Args:
@@ -197,9 +197,10 @@ class ImageEmbedding:
         Returns:
             Transformed image embedding
         """
-        return masker.fit_transform(image)
+        image = self.masker.inverse_transform(image_arr)
+        return self.masker_parc.fit_transform(image)
 
-    def parallel_image_masking(self, image_output, masker, n_jobs=-1):
+    def parallel_image_masking(self, images, n_jobs=-1):
         """Apply masking transformation to multiple images in parallel
 
         Args:
@@ -211,11 +212,10 @@ class ImageEmbedding:
             Array of transformed image embeddings
         """
         # Create progress bar
-        with tqdm(total=len(image_output), desc="Processing images") as pbar:
+        with tqdm(total=len(images), desc="Processing images") as pbar:
             # Process images in parallel with progress updates
             results = Parallel(n_jobs=n_jobs)(
-                delayed(self.process_single_image)(img, masker)
-                for img in tqdm(image_output, leave=False)
+                delayed(self.process_single_image)(img) for img in tqdm(images, leave=False)
             )
 
         # Stack results into a single array
@@ -233,9 +233,9 @@ class ImageEmbedding:
         """
         # Get images from coordinates
         kernel = MKDAKernel()
-        self.images = kernel.transform(dset, return_type="image")
+        self.images = kernel.transform(dset, return_type="array")
 
-        return self.parallel_image_masking(self.images, self.masker, n_jobs=self.n_jobs)
+        return self.parallel_image_masking(self.images, n_jobs=self.n_jobs)
 
     def __call__(self, dset: Dataset) -> np.ndarray:
         """
@@ -247,4 +247,5 @@ class ImageEmbedding:
         Returns:
             Numpy array of embeddings
         """
+        self.masker = dset.masker
         return self.generate_embedding(dset)
