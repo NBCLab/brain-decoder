@@ -5,7 +5,13 @@ from typing import List, Tuple, Union
 
 import numpy as np
 import torch
+from joblib import Parallel, delayed
+from nilearn import datasets
+from nilearn.maskers import MultiNiftiMapsMasker
+from nimare.dataset import Dataset
+from nimare.meta.kernel import MKDAKernel
 from scipy.spatial.distance import cosine
+from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
 from braindec.utils import _get_device
@@ -162,3 +168,77 @@ class TextEmbedding:
             return self.process_large_text(text)
         else:
             return np.stack([self.process_large_text(t) for t in text])
+
+
+class ImageEmbedding:
+    def __init__(self):
+        """
+        Initialize the image embedding generator with specified model.
+
+        Args:
+            model_name: Name of the DeiT model to use
+        """
+        difumo = datasets.fetch_atlas_difumo(dimension=512, resolution_mm=2, legacy_format=False)
+        self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps)
+
+    def process_single_image(self, image, masker):
+        """Process a single image using the provided masker
+
+        Args:
+            image: Single image to process
+            masker: Initialized masker object with fit_transform method
+
+        Returns:
+            Transformed image embedding
+        """
+        return masker.fit_transform(image)
+
+    def parallel_image_masking(self, image_output, masker, n_jobs=-1):
+        """Apply masking transformation to multiple images in parallel
+
+        Args:
+            image_output: List/array of images to process
+            masker: Initialized masker object (e.g. DiFuMo masker)
+            n_jobs: Number of parallel jobs (-1 for all available cores)
+
+        Returns:
+            Array of transformed image embeddings
+        """
+        # Create progress bar
+        with tqdm(total=len(image_output), desc="Processing images") as pbar:
+            # Process images in parallel with progress updates
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(self.process_single_image)(img, masker)
+                for img in tqdm(image_output, leave=False)
+            )
+
+        # Stack results into a single array
+        return np.vstack(results)
+
+    def generate_embedding(self, dset: Dataset) -> np.ndarray:
+        """
+        Generate embedding for a single image.
+
+        Args:
+            image: Input image as a numpy array
+
+        Returns:
+            Numpy array containing the embedding
+        """
+        # Get images from coordinates
+        kernel = MKDAKernel()
+        self.images = kernel.transform(dset, return_type="image")
+
+        return self.parallel_image_masking(self.images, self.masker)
+
+    def __call__(self, dset: Dataset) -> np.ndarray:
+        """
+        Generate embeddings for input images.
+
+        Args:
+            images: List of input images as numpy arrays
+
+        Returns:
+            Numpy array of embeddings
+        """
+        return self.generate_embedding(dset)

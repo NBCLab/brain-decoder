@@ -1,11 +1,13 @@
 """Braindec: Brain image decoder."""
 
-from . import model, preproc, train, utils  # predict
+from . import dataset, embedding, loss, model, plot, train, utils  # predict
 
 __all__ = [
     "model",
-    # "predict",
-    "preproc",
+    "dataset",
+    "loss",
+    "embedding",
+    "plot",
     "train",
     "utils",
 ]

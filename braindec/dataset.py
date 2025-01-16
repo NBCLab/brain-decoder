@@ -1,6 +1,9 @@
+import json
 import os.path as op
 from collections import Counter
+from glob import glob
 
+import nimare
 import numpy as np
 import pandas as pd
 import torch
@@ -76,6 +79,93 @@ def create_random_loaders(dataset, batch_size, train_size=0.7, val_size=0.15):
     test_loader = DataLoader(dataset, batch_size=batch_size, sampler=test_sampler)
 
     return train_loader, val_loader, test_loader
+
+
+def _neurostore_to_nimare(data_dir):
+    """
+    Convert the NeuroStore dataset to a NiMARE dataset.
+    """
+    sorted_dirs = sorted(glob(op.join(data_dir, "*")))
+
+    dataset_dict = {}
+    for dset_dir in sorted_dirs:
+        proc_dir = op.join(dset_dir, "processed")
+        if not op.exists(proc_dir):
+            continue
+
+        print(f"Processing {dset_dir}")
+
+        extract_dirs = sorted(glob(op.join(proc_dir, "*")))
+
+        if len(extract_dirs) == 0:
+            continue
+
+        if len(extract_dirs) > 1:
+            print(f"\tMultiple directories found in {proc_dir}")
+            extracts = [op.basename(ext) for ext in extract_dirs]
+            # Prioritize pubget if available
+            if "pubget" in extracts:
+                sel_dirs = op.join(proc_dir, "pubget")
+            else:
+                print(f"\tPubget not found in {extracts}")
+                continue
+        else:
+            print(f"\tOnly one directory found in {proc_dir}")
+            sel_dirs = extract_dirs[0]
+
+        coord_fn = op.join(sel_dirs, "coordinates.csv")
+        meta_fn = op.join(sel_dirs, "metadata.json")
+        text_fn = op.join(sel_dirs, "text.txt")
+
+        if not op.exists(coord_fn) or not op.exists(text_fn):
+            print(f"\t\tCoordinates or text file not found: {coord_fn}, {text_fn}")
+            continue
+
+        assert op.exists(meta_fn), f"Metadata file not found: {meta_fn}"
+
+        with open(meta_fn, "r") as file:
+            metadata = json.load(file)
+
+        with open(text_fn, "r") as file:
+            body = file.read()
+
+        try:
+            coord_df = pd.read_csv(coord_fn)
+        except pd.errors.EmptyDataError:
+            print(f"\t\tEmpty coordinates file: {coord_fn}")
+            continue
+
+        print(f"\t\t{coord_df.shape[0]} coordinates found")
+        if coord_df.empty or body == "":
+            continue
+
+        id_ = op.basename(dset_dir)
+
+        if id_ not in dataset_dict:
+            dataset_dict[id_] = {}
+
+        if "contrasts" not in dataset_dict[id_]:
+            dataset_dict[id_]["contrasts"] = {}
+
+        # For now, lets have only one contrast per study
+        contrast_name = "1"
+
+        dataset_dict[id_]["contrasts"][contrast_name] = {
+            "coords": {
+                "space": "MNI",
+                "x": coord_df["x"].values,
+                "y": coord_df["y"].values,
+                "z": coord_df["z"].values,
+            },
+            "text": {
+                "title": metadata["title"],
+                "keywords": metadata["keywords"],
+                "abstract": metadata["abstract"],
+                "body": body,
+            },
+        }
+
+    return nimare.dataset.Dataset(dataset_dict)
 
 
 def _get_dataset(dset_nm, data_dir):

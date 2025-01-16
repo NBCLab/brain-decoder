@@ -9,7 +9,7 @@ import torch
 from braindec.dataset import MRIDataset, create_balanced_loaders, create_random_loaders
 from braindec.loss import ClipLoss
 from braindec.model import CLIP, count_parameters
-from braindec.plotting import _plot_training_history
+from braindec.plot import _plot_training_history
 from braindec.train import test, train, validate
 from braindec.utils import _get_device
 
