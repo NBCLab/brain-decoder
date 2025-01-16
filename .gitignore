@@ -1,6 +1,7 @@
 # Project dirs
 /data
 /results
+/jobs/log
 
 # VS Code
 .vscode/
