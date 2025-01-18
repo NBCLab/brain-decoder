@@ -1,15 +1,11 @@
 """Train and evaluate a model on the BrainDec dataset."""
 
-import numpy as np
 import torch
-import torch.nn.functional as F
-from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 
-# from torchsummary import summary
+from braindec.plot import plot_training
 
 
-# Training function
 def train(model, train_loader, criterion, optimizer, device, scheduler=None, clip_grad_norm=None):
     model.train()
 
@@ -38,10 +34,9 @@ def train(model, train_loader, criterion, optimizer, device, scheduler=None, cli
         if scheduler is not None:
             scheduler.step()
 
-    return train_loss / len(train_loader)
+    return model, train_loss / len(train_loader)
 
 
-# Validation function
 def validate(model, val_loader, criterion, device):
     model.eval()
 
@@ -58,31 +53,174 @@ def validate(model, val_loader, criterion, device):
 
             val_loss += loss.item()
 
-    return val_loss / len(val_loader)
+    return model, val_loss / len(val_loader)
 
 
-# Test function
-def test(model, test_loader, device):
+def predict(model, data_loader, device):
     model.eval()
-    correct = 0
-    total = 0
-    targets, predictions = [], []
+
     with torch.no_grad():
-        for labels, soft_labels, true_labels, images in tqdm(test_loader, desc="Testing"):
-            soft_labels = soft_labels.to(device)
-            true_labels = true_labels.to(device)
-            images = images.to(device)
+        all_image_embeddings = []
+        all_text_embeddings = []
+        for image_embeddings, text_embeddings in data_loader:
+            image_embeddings = image_embeddings.to(device)
+            text_embeddings = text_embeddings.to(device)
 
-            output = model(images)
-            _, predicted_labels = output.max(1)  # predictions
+            image_embed, text_embed = model(image_embeddings, text_embeddings)  # Forward pass
 
-            total += true_labels.size(0)
-            correct += predicted_labels.eq(true_labels).sum().item()
-            targets.extend(true_labels.cpu().numpy())
-            predictions.extend(F.softmax(output, dim=1).detach().cpu().numpy())
+            all_image_embeddings.append(image_embed.cpu())
+            all_text_embeddings.append(text_embed.cpu())
 
-    targets = np.array(targets)
-    predictions = np.array(predictions)
-    roc_auc = roc_auc_score(targets, predictions, average="macro", multi_class="ovr")
-    accuracy = 100.0 * correct / total
-    return accuracy, roc_auc
+    all_image_embeddings = torch.cat(all_image_embeddings, dim=0)
+    all_text_embeddings = torch.cat(all_text_embeddings, dim=0)
+
+    return all_image_embeddings, all_text_embeddings
+
+
+def train_clip_model(
+    model,
+    criterion,
+    optimizer,
+    num_epochs,
+    train_loader,
+    val_loader,
+    best_model_fn,
+    last_model_fn,
+    device,
+    plot_verbose=False,
+):
+    # Training loop
+    best_val_loss = float("inf")
+    patience = 10
+    counter = 0
+    train_losses = []
+    val_losses = []
+    for epoch in range(num_epochs):
+        model, train_loss = train(model, train_loader, criterion, optimizer, device)
+        model, val_loss = validate(model, val_loader, criterion, device)
+
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        print(
+            f"Epoch {epoch + 1}/{num_epochs}, "
+            f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, "
+        )
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            counter = 0
+            torch.save(model.state_dict(), best_model_fn)
+        else:
+            counter += 1
+            if counter >= patience:
+                print(f"Early stopping triggered after {epoch + 1} epochs")
+                break
+
+    torch.save(model.state_dict(), last_model_fn)
+
+    # Check training and validation loss
+    if plot_verbose:
+        plot_training(train_loss, val_loss)
+
+    return model, train_losses, val_losses
+
+
+def train_decoder(model, clip_model, train_loader, criterion, optimizer, device):
+    model.train()
+    clip_model.eval()
+
+    train_loss = 0
+    for image_embeddings, text_embeddings in tqdm(train_loader, desc="Training"):
+        optimizer.zero_grad()  # Reset all gradients
+
+        image_embeddings = image_embeddings.to(device)
+        text_embeddings = text_embeddings.to(device)
+
+        image_embed = clip_model.encode_image(image_embeddings)
+        image_embed = model(image_embed)  # Forward pass. Decoder model
+
+        # Calculate the loss
+        loss = criterion(image_embed, text_embeddings)
+        train_loss += loss.item()
+
+        loss.backward()  # Backpropagate the loss
+
+        optimizer.step()  # Update the weights
+
+    return model, train_loss / len(train_loader)
+
+
+def validate_decoder(model, clip_model, val_loader, criterion, device):
+    model.eval()
+    clip_model.eval()
+
+    val_loss = 0
+    with torch.no_grad():
+        for image_embeddings, text_embeddings in tqdm(val_loader, desc="Validating"):
+            image_embeddings = image_embeddings.to(device)
+            text_embeddings = text_embeddings.to(device)
+
+            image_embed = clip_model.encode_image(image_embeddings)
+            image_embed = model(image_embed)
+
+            # Calculate the loss
+            loss = criterion(image_embed, text_embeddings)
+            val_loss += loss.item()
+
+    return model, val_loss / len(val_loader)
+
+
+def train_decoder_model(
+    model,
+    clip_model,
+    criterion,
+    optimizer,
+    num_epochs,
+    train_loader,
+    val_loader,
+    best_model_fn,
+    last_model_fn,
+    device,
+    plot_verbose=False,
+):
+    # Training loop
+    best_val_loss = float("inf")
+    patience = 10
+    counter = 0
+    train_losses = []
+    val_losses = []
+    for epoch in range(num_epochs):
+        model, train_loss = train_decoder(
+            model,
+            clip_model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+        )
+        model, val_loss = validate_decoder(model, clip_model, val_loader, criterion, device)
+
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        print(
+            f"Epoch {epoch + 1}/{num_epochs}, "
+            f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, "
+        )
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            counter = 0
+            torch.save(model.state_dict(), best_model_fn)
+        else:
+            counter += 1
+            if counter >= patience:
+                print(f"Early stopping triggered after {epoch + 1} epochs")
+                break
+
+    torch.save(model.state_dict(), last_model_fn)
+
+    # Check training and validation loss
+    if plot_verbose:
+        plot_training(train_loss, val_loss)
+
+    return model, train_losses, val_losses

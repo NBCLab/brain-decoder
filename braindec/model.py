@@ -202,16 +202,28 @@ class ProjectionHead(nn.Module):
         return x
 
 
+class Decoder(nn.Module):
+    def __init__(self, embedding_dim, output_dim, dropout):
+        super().__init__()
+
+        self.model = nn.Sequential(
+            ProjectionHead(embedding_dim, output_dim, dropout=dropout),
+            ResidualHead(output_dim, dropout=dropout),
+            ResidualHead(output_dim, dropout=dropout),
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
+
 class ImageModel(nn.Module):
     def __init__(self, output_dim, dropout):
         super().__init__()
 
-        self.model = (
-            nn.Sequential(
-                ResidualHead(output_dim, dropout=dropout),
-                ResidualHead(output_dim, dropout=dropout),
-                ResidualHead(output_dim, dropout=dropout),
-            ),
+        self.model = nn.Sequential(
+            ResidualHead(output_dim, dropout=dropout),
+            ResidualHead(output_dim, dropout=dropout),
+            ResidualHead(output_dim, dropout=dropout),
         )
 
     def forward(self, x):
@@ -222,12 +234,10 @@ class TextModel(nn.Module):
     def __init__(self, embedding_dim, output_dim, dropout):
         super().__init__()
 
-        self.model = (
-            nn.Sequential(
-                ProjectionHead(embedding_dim, output_dim, dropout=dropout),
-                ResidualHead(output_dim, dropout=dropout),
-                ResidualHead(output_dim, dropout=dropout),
-            ),
+        self.model = nn.Sequential(
+            ProjectionHead(embedding_dim, output_dim, dropout=dropout),
+            ResidualHead(output_dim, dropout=dropout),
+            ResidualHead(output_dim, dropout=dropout),
         )
 
     def forward(self, x):
@@ -258,10 +268,8 @@ class CLIP(nn.Module):
 
     def forward(self, image, text):
         image_embeddings = self.encode_image(image)
-        print(f"image_embeddings shape: {image_embeddings.shape}")
 
         text_embeddings = self.encode_text(text)
-        print(f"text_embeddings shape: {text_embeddings.shape}")
 
         image_embeddings = image_embeddings / image_embeddings.norm(dim=-1, keepdim=True)
         text_embeddings = text_embeddings / text_embeddings.norm(dim=-1, keepdim=True)
