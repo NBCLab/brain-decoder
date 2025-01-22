@@ -275,3 +275,22 @@ class CLIP(nn.Module):
         text_embeddings = text_embeddings / text_embeddings.norm(dim=-1, keepdim=True)
 
         return image_embeddings, text_embeddings
+
+
+def build_model(model_path, device):
+    """Build model from a saved model file."""
+    try:
+        state_dict = torch.load(model_path, map_location=device)
+    except FileNotFoundError:
+        print("Model file not found")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+
+    # Infer parameters from the state_dict
+    input_dim = state_dict["text_model.model.0.projection.weight"].shape[1]
+    output_dim = state_dict["image_model.model.0.fc.weight"].shape[1]
+
+    model = CLIP(input_dim, output_dim=output_dim).to(device)
+    model.load_state_dict(state_dict)
+
+    return model.eval()

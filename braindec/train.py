@@ -120,7 +120,7 @@ def train_clip_model(
 
     # Check training and validation loss
     if plot_verbose:
-        plot_training(train_loss, val_loss)
+        plot_training(train_losses, val_losses)
 
     return model, train_losses, val_losses
 
@@ -221,6 +221,6 @@ def train_decoder_model(
 
     # Check training and validation loss
     if plot_verbose:
-        plot_training(train_loss, val_loss)
+        plot_training(train_losses, val_losses)
 
     return model, train_losses, val_losses

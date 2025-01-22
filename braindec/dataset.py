@@ -7,6 +7,7 @@ import nimare
 import numpy as np
 import pandas as pd
 import torch
+from nimare import extract
 from nimare.extract import fetch_neuroquery, fetch_neurosynth
 from nimare.io import convert_neurosynth_to_dataset
 from nimare.meta.kernel import MKDAKernel
@@ -79,6 +80,42 @@ def create_random_loaders(dataset, batch_size, train_size=0.7, val_size=0.15):
     test_loader = DataLoader(dataset, batch_size=batch_size, sampler=test_sampler)
 
     return train_loader, val_loader, test_loader
+
+
+def _get_vocabulary(source="neurosynth", data_dir=None):
+    if source in ["neurosynth", "neuroquery"]:
+        if source == "neurosynth":
+            files = fetch_neurosynth(
+                data_dir=data_dir,
+                version="7",
+                overwrite=False,
+                source="abstract",
+                vocab="terms",
+            )
+        elif source == "neuroquery":
+            files = fetch_neuroquery(
+                data_dir=data_dir,
+                version="1",
+                overwrite=False,
+                source="combined",
+                vocab="neuroquery6308",
+                type="tfidf",
+            )
+
+        dataset_db = files[0]
+        vocabulary_fn = dataset_db["features"][0]["vocabulary"]
+
+        vocabulary = []
+        with open(vocabulary_fn, "r") as file:
+            for line in file:
+                vocabulary.append(line.strip())
+
+    elif source == "cogatlas":
+        cogatlas = extract.download_cognitive_atlas(data_dir=data_dir, overwrite=False)
+        id_df = pd.read_csv(cogatlas["ids"])
+        vocabulary = id_df["name"].unique().tolist()
+
+    return vocabulary
 
 
 def _neurostore_to_nimare(data_dir):

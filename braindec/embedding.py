@@ -10,7 +10,6 @@ from nilearn import datasets
 from nilearn.maskers import MultiNiftiMapsMasker
 from nimare.dataset import Dataset
 from nimare.meta.kernel import MKDAKernel
-from scipy.spatial.distance import cosine
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
@@ -18,7 +17,12 @@ from braindec.utils import _get_device
 
 
 class TextEmbedding:
-    def __init__(self, model_name: str = "mistralai/Mistral-7B-v0.1", max_length: int = 512):
+    def __init__(
+        self,
+        vocabulary: list = None,
+        model_name: str = "mistralai/Mistral-7B-v0.1",
+        max_length: int = 512,
+    ):
         """
         Initialize the embedding generator with specified model and parameters.
 
@@ -30,54 +34,7 @@ class TextEmbedding:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name).to(self.device)
         self.max_length = max_length
-        self.vocabulary_embeddings = None
-
-    def set_vocabulary(self, vocabulary: List[str]):
-        """
-        Set the vocabulary and generate embeddings for each word.
-
-        Args:
-            vocabulary: List of words to use as vocabulary
-        """
-        # Generate embeddings for each vocabulary word
         self.vocabulary = vocabulary
-        self.vocabulary_embeddings = []
-
-        for word in vocabulary:
-            embedding = self.generate_embedding(word)
-            self.vocabulary_embeddings.append(embedding)
-
-        self.vocabulary_embeddings = np.array(self.vocabulary_embeddings)
-
-    def decode_embedding(self, embedding: np.ndarray, top_k: int = 5) -> List[Tuple[str, float]]:
-        """
-        Find the most similar words in the vocabulary for a given embedding.
-
-        Args:
-            embedding: Input embedding to decode
-            top_k: Number of most similar words to return
-
-        Returns:
-            List of tuples containing (word, similarity_score)
-        """
-        if self.vocabulary_embeddings is None:
-            raise ValueError("Vocabulary not set. Call set_vocabulary() first.")
-
-        # Calculate cosine similarity between input embedding and vocabulary embeddings
-        similarities = []
-        for vocab_embedding in self.vocabulary_embeddings:
-            similarity = 1 - cosine(embedding, vocab_embedding)
-            similarities.append(similarity)
-
-        # Convert similarities to probabilities using softmax
-        similarities = torch.tensor(similarities)
-        probabilities = torch.softmax(similarities, dim=0).numpy()
-
-        # Get top-k similar words
-        top_indices = np.argsort(probabilities)[-top_k:][::-1]
-        results = [(self.vocabulary[idx], probabilities[idx]) for idx in top_indices]
-
-        return results
 
     def chunk_text(self, text: str) -> List[str]:
         """

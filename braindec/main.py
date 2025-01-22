@@ -200,7 +200,7 @@ def main():
         )
 
         print("Initializing CLIP model")
-        model, optimizer, criterion, scheduler = _initialize_clip_model(
+        clip_model, optimizer, criterion, scheduler = _initialize_clip_model(
             txt_emb_dim,
             output_dim,
             dropout,
@@ -209,31 +209,36 @@ def main():
             device,
         )
 
-        print("Training CLIP model")
-        clip_model, _, _ = train_clip_model(
-            model,
-            criterion,
-            optimizer,
-            num_epochs,
-            train_loader,
-            val_loader,
-            best_model_fn,
-            last_model_fn,
-            device,
-            plot_verbose=plot_verbose,
-        )
+        if op.exists(best_model_fn):
+            # Load best model
+            print("Loading best model")
+            clip_model.load_state_dict(torch.load(best_model_fn))
+        else:
+            print("Training CLIP model")
+            clip_model, _, _ = train_clip_model(
+                clip_model,
+                criterion,
+                optimizer,
+                num_epochs,
+                train_loader,
+                val_loader,
+                best_model_fn,
+                last_model_fn,
+                device,
+                plot_verbose=plot_verbose,
+            )
 
-        print("Evaluating CLIP model")
-        metrics = _evaluate_clip_model(
-            clip_model,
-            train_loader,
-            val_loader,
-            test_loader,
-            best_model_fn,
-            last_model_fn,
-            device,
-            plot_verbose=plot_verbose,
-        )
+            print("Evaluating CLIP model")
+            metrics = _evaluate_clip_model(
+                clip_model,
+                train_loader,
+                val_loader,
+                test_loader,
+                best_model_fn,
+                last_model_fn,
+                device,
+                plot_verbose=plot_verbose,
+            )
 
         print("Initializing Decoder model")
         decoder_model, optimizer_dec, criterion_dec, scheduler_dec = _initialize_decoder_model(
@@ -260,14 +265,14 @@ def main():
             plot_verbose=plot_verbose,
         )
 
-    print(f"Metrics after {fold} folds")
-    for loader_name in ["train", "validation", "test"]:
-        print("=" * 10, loader_name, "=" * 10)
-        for metric_name in ["recall@10", "recall@100", "mix_match"]:
-            print(
-                f"{metric_name}: {np.mean(metrics[loader_name][metric_name]):.3f}"
-                f" +- {np.std(metrics[loader_name][metric_name]):.3f}"
-            )
+    # print(f"Metrics after {fold} folds")
+    # for loader_name in ["train", "validation", "test"]:
+    #     print("=" * 10, loader_name, "=" * 10)
+    #     for metric_name in ["recall@10", "recall@100", "mix_match"]:
+    #         print(
+    #             f"{metric_name}: {np.mean(metrics[loader_name][metric_name]):.3f}"
+    #             f" +- {np.std(metrics[loader_name][metric_name]):.3f}"
+    #         )
 
 
 if __name__ == "__main__":
