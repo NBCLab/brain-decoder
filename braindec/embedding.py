@@ -1,17 +1,17 @@
 """Code to determine embeddings for text and images."""
 
 import textwrap
-from typing import List, Tuple, Union
+from typing import List, Union
 
 import numpy as np
 import torch
-from joblib import Parallel, delayed
 from nilearn import datasets
+from nilearn.image import concat_imgs
 from nilearn.maskers import MultiNiftiMapsMasker
 from nimare.dataset import Dataset
 from nimare.meta.kernel import MKDAKernel
-from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
+from peft import PeftConfig, PeftModel
+from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 
 from braindec.utils import _get_device
 
@@ -20,19 +20,38 @@ class TextEmbedding:
     def __init__(
         self,
         vocabulary: list = None,
-        model_name: str = "mistralai/Mistral-7B-v0.1",
+        model_name: str = "BrainGPT/BrainGPT-7B-v0.2",
         max_length: int = 512,
     ):
         """
         Initialize the embedding generator with specified model and parameters.
 
         Args:
-            model_name: Name of the Mistral model to use
+            model_name: Name of the model to use (mistralai/Mistral-7B-v0.1)
             max_length: Maximum token length for each chunk
         """
         self.device = _get_device()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name).to(self.device)
+        self.model_name = model_name
+
+        if model_name == "mistralai/Mistral-7B-v0.1":
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModel.from_pretrained(model_name).to(self.device)
+        elif model_name == "BrainGPT/BrainGPT-7B-v0.1":
+            config = PeftConfig.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+
+            self.model = PeftModel.from_pretrained(model, model_name).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
+        elif model_name == "BrainGPT/BrainGPT-7B-v0.2":
+            config = PeftConfig.from_pretrained(model_name)
+            # The config file has path to the base model instead of the model name
+            model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.1")
+
+            self.model = PeftModel.from_pretrained(model, model_name).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
+        else:
+            raise ValueError(f"Model name {model_name} not supported.")
+
         self.max_length = max_length
         self.vocabulary = vocabulary
 
@@ -82,8 +101,12 @@ class TextEmbedding:
         with torch.no_grad():
             outputs = self.model(**inputs)
 
-        # Use the mean of the last hidden state as the embedding
-        embeddings = outputs.last_hidden_state.mean(dim=1)
+        if self.model_name.startswith("BrainGPT"):
+            # Use the mean of the last hidden state as the embedding
+            embeddings = outputs.logits.mean(dim=1)
+        else:
+            # Use the mean of the last hidden state as the embedding
+            embeddings = outputs.last_hidden_state.mean(dim=1)
 
         return embeddings.cpu().numpy()[0]
 
@@ -141,42 +164,8 @@ class ImageEmbedding:
             legacy_format=False,
             data_dir=data_dir,
         )
-        self.masker_parc = MultiNiftiMapsMasker(maps_img=difumo.maps)
+        self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps)
         self.n_jobs = n_jobs
-
-    def process_single_image(self, image_arr):
-        """Process a single image using the provided masker
-
-        Args:
-            image: Single image to process
-            masker: Initialized masker object with fit_transform method
-
-        Returns:
-            Transformed image embedding
-        """
-        image = self.masker.inverse_transform(image_arr)
-        return self.masker_parc.fit_transform(image)
-
-    def parallel_image_masking(self, images, n_jobs=-1):
-        """Apply masking transformation to multiple images in parallel
-
-        Args:
-            image_output: List/array of images to process
-            masker: Initialized masker object (e.g. DiFuMo masker)
-            n_jobs: Number of parallel jobs (-1 for all available cores)
-
-        Returns:
-            Array of transformed image embeddings
-        """
-        # Create progress bar
-        with tqdm(total=len(images), desc="Processing images") as pbar:
-            # Process images in parallel with progress updates
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(self.process_single_image)(img) for img in tqdm(images, leave=False)
-            )
-
-        # Stack results into a single array
-        return np.vstack(results)
 
     def generate_embedding(self, dset: Dataset) -> np.ndarray:
         """
@@ -190,9 +179,10 @@ class ImageEmbedding:
         """
         # Get images from coordinates
         kernel = MKDAKernel()
-        self.images = kernel.transform(dset, return_type="array")
+        self.images = kernel.transform(dset, return_type="image")
+        self.images = concat_imgs(self.images)
 
-        return self.parallel_image_masking(self.images, n_jobs=self.n_jobs)
+        return self.masker.fit_transform(self.images)
 
     def __call__(self, dset: Dataset) -> np.ndarray:
         """
@@ -204,5 +194,4 @@ class ImageEmbedding:
         Returns:
             Numpy array of embeddings
         """
-        self.masker = dset.masker
         return self.generate_embedding(dset)

@@ -118,7 +118,7 @@ def _get_vocabulary(source="neurosynth", data_dir=None):
     return vocabulary
 
 
-def _neurostore_to_nimare(data_dir):
+def _neurostore_to_nimare(data_dir, source="all", content="body"):
     """
     Convert the NeuroStore dataset to a NiMARE dataset.
     """
@@ -137,9 +137,10 @@ def _neurostore_to_nimare(data_dir):
         if len(extract_dirs) == 0:
             continue
 
-        if len(extract_dirs) > 1:
+        extracts = [op.basename(ext) for ext in extract_dirs]
+        if len(extracts) > 1:
             print(f"\tMultiple directories found in {proc_dir}")
-            extracts = [op.basename(ext) for ext in extract_dirs]
+
             # Prioritize pubget if available
             if "pubget" in extracts:
                 sel_dirs = op.join(proc_dir, "pubget")
@@ -150,12 +151,17 @@ def _neurostore_to_nimare(data_dir):
             print(f"\tOnly one directory found in {proc_dir}")
             sel_dirs = extract_dirs[0]
 
+        if source == "pubget":
+            if "pubget" not in extracts:
+                print(f"\tPubget not found in {extracts}")
+                continue
+
         coord_fn = op.join(sel_dirs, "coordinates.csv")
         meta_fn = op.join(sel_dirs, "metadata.json")
         text_fn = op.join(sel_dirs, "text.txt")
 
-        if not op.exists(coord_fn) or not op.exists(text_fn):
-            print(f"\t\tCoordinates or text file not found: {coord_fn}, {text_fn}")
+        if not op.exists(coord_fn):
+            print(f"\t\tCoordinates file not found: {coord_fn}")
             continue
 
         assert op.exists(meta_fn), f"Metadata file not found: {meta_fn}"
@@ -163,8 +169,26 @@ def _neurostore_to_nimare(data_dir):
         with open(meta_fn, "r") as file:
             metadata = json.load(file)
 
-        with open(text_fn, "r") as file:
-            body = file.read()
+        if content in ("all", "abstract"):
+            if (
+                (metadata["abstract"] == "")
+                or (metadata["abstract"] is None)
+                or (metadata["abstract"] == "None")
+                or (metadata["abstract"] == "null")
+                or pd.isna(metadata["abstract"])
+            ):
+                print(f"\t\tEmpty abstract: {meta_fn}")
+                continue
+
+        if content in ("all", "body"):
+            if not op.exists(text_fn):
+                print(f"\t\tText file not found: {text_fn}")
+                continue
+
+            with open(text_fn, "r") as file:
+                body = file.read()
+        else:
+            body = ""
 
         try:
             coord_df = pd.read_csv(coord_fn)
@@ -173,7 +197,7 @@ def _neurostore_to_nimare(data_dir):
             continue
 
         print(f"\t\t{coord_df.shape[0]} coordinates found")
-        if coord_df.empty or body == "":
+        if coord_df.empty:
             continue
 
         id_ = op.basename(dset_dir)

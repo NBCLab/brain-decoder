@@ -29,6 +29,7 @@ dependencies = [
     "nimare",
     "xgboost",
     "transformers",
+    "peft",
 ]
 dynamic = ["version"]
 
