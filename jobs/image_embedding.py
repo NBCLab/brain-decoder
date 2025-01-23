@@ -20,14 +20,16 @@ def _get_parser():
 
 def main(project_dir):
     project_dir = op.abspath(project_dir)
-    nilearn_data = op.join(project_dir, "data", "nilearn")
-    dset = nimare.dataset.Dataset.load(op.join(project_dir, "data", "neurostore_nimare.pkl"))
+    data_dir = op.join(project_dir, "data")
+    nilearn_data = op.join(data_dir, "nilearn")
+
+    dset = nimare.dataset.Dataset.load(op.join(data_dir, "neurostore-abstract_dset.pkl"))
 
     image_emb_gene = ImageEmbedding(data_dir=nilearn_data)
     image_embedding_arr = image_emb_gene(dset)
 
     print(image_embedding_arr.shape)
-    np.save(op.join(project_dir, "data", "image_embedding.npy"), image_embedding_arr)
+    np.save(op.join(data_dir, "image_embedding.npy"), image_embedding_arr)
 
 
 def _main(argv=None):
