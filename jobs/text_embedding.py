@@ -4,7 +4,7 @@ import os.path as op
 import nimare
 import numpy as np
 
-from braindec.embedding import ImageEmbedding
+from braindec.embedding import TextEmbedding
 
 
 def _get_parser():
@@ -20,14 +20,15 @@ def _get_parser():
 
 def main(project_dir):
     project_dir = op.abspath(project_dir)
-    nilearn_data = op.join(project_dir, "data", "nilearn")
-    dset = nimare.dataset.Dataset.load(op.join(project_dir, "data", "neurostore_nimare.pkl"))
+    data_dir = op.join(project_dir, "data")
 
-    image_emb_gene = ImageEmbedding(data_dir=nilearn_data)
-    image_embedding_arr = image_emb_gene(dset)
+    dset = nimare.dataset.Dataset.load(op.join(data_dir, "neurostore-abstract_dset.pkl"))
 
-    print(image_embedding_arr.shape)
-    np.save(op.join(project_dir, "data", "image_embedding.npy"), image_embedding_arr)
+    generator = TextEmbedding()
+    text_embedding_arr = generator(dset.texts["abstract"].to_list())  # body
+
+    print(text_embedding_arr.shape)
+    np.save(op.join(data_dir, "text_embedding.npy"), text_embedding_arr)
 
 
 def _main(argv=None):
