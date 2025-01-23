@@ -37,7 +37,10 @@ def main(project_dir):
 
     vocabulary = _get_vocabulary(source=source, data_dir=data_dir)
     vocabulary_emb = generator(vocabulary)
-    np.save(op.join(data_dir, f"vocabulary_embedding_{model_name}.npy"), vocabulary_emb)
+    np.save(op.join(data_dir, f"vocabulary-{source}_embedding_{model_name}.npy"), vocabulary_emb)
+    with open(op.join(data_dir, f"vocabulary-{source}_{model_name}.txt"), "w") as f:
+        for item in vocabulary:
+            f.write("%s\n" % item)
 
 
 def _main(argv=None):
