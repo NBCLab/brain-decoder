@@ -116,8 +116,7 @@ def main():
     project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
     data_dir = op.join(project_dir, "data")
     results_dir = op.join(project_dir, "results")
-    output_dir = op.join(results_dir, "neurocontext")
-    neurocontext_dir = op.join(data_dir, "neurocontext")
+    output_dir = op.join(results_dir, "neurostore")
     os.makedirs(output_dir, exist_ok=True)
 
     best_model_fn = op.join(output_dir, "best_clip-model.pth")
@@ -127,14 +126,10 @@ def main():
     print(f"Using device: {device}")
 
     # Load dataset
-    with open(op.join(neurocontext_dir, "preprocessed_train_gaussian_embeddings.pkl"), "rb") as f:
-        train_img_emb = pickle.load(f)
-    with open(op.join(neurocontext_dir, "preprocessed_train_text_embeddings.pkl"), "rb") as f:
-        train_txt_emb = pickle.load(f)
-    with open(op.join(neurocontext_dir, "preprocessed_test_gaussian_embeddings.pkl"), "rb") as f:
-        test_img_emb = pickle.load(f)
-    with open(op.join(neurocontext_dir, "preprocessed_test_text_embeddings.pkl"), "rb") as f:
-        test_txt_emb = pickle.load(f)
+    text_emb = np.load(op.join(data_dir, "text_embedding.npy"))
+    img_emb = np.load(op.join(data_dir, "image_embedding.npy"))
+
+    assert text_emb.shape[0] == img_emb.shape[0]
 
     # Hyperparameters
     batch_size = 128
@@ -144,77 +139,89 @@ def main():
     dropout = 0.5
 
     # Other parameters
-    txt_emb_dim = train_txt_emb.shape[1]
-    img_emb_dim = train_img_emb.shape[1]
-    output_dim = train_img_emb.shape[1]  # number of region in difumo
-    number_of_folds_to_run = 1
+    val_size = 1000
+    test_size = 1000
+    sample_size = text_emb.shape[0]
+    text_emb_dim = text_emb.shape[1]
+    output_dim = img_emb.shape[1]  # number of region in difumo
+    test_folds_to_run = 1
+    val_folds_to_run = 1
     plot_verbose = True
 
-    # criterion = nn.MSELoss()
-    # criterion = nn.CrossEntropyLoss() # for hard labels
-    # criterion = nn.BCELoss() # when using sigmoid in the output layer
-    # criterion = nn.KLDivLoss(reduction="batchmean")  # for soft labels
+    # Split data into train, validation, and test sets
+    test_k_fold = KFold(n_splits=sample_size // test_size)
+    train_test_split = test_k_fold.split(text_emb)
+    for test_fold, (train_val_index, test_index) in enumerate(train_test_split):
+        test_index = test_index[:test_size]  # Strict 1000 validation samples
 
-    test_loader = _get_data_loader(test_img_emb, test_txt_emb, batch_size, shuffle=False)
-
-    validation_size = 1000
-    k_fold = KFold(n_splits=len(train_txt_emb) // validation_size)
-    for fold, (train_index, val_index) in enumerate(k_fold.split(train_txt_emb)):
-        val_index = val_index[:validation_size]  # Strict 1000 validation samples
-        if fold >= number_of_folds_to_run:
+        if test_fold >= test_folds_to_run:
             break
 
-        train_loader = _get_data_loader(
-            train_img_emb[train_index],
-            train_txt_emb[train_index],
-            batch_size,
-            shuffle=True,
-        )
-
-        val_loader = _get_data_loader(
-            train_img_emb[val_index],
-            train_txt_emb[val_index],
+        test_loader = _get_data_loader(
+            img_emb[test_index],
+            text_emb[test_index],
             batch_size,
             shuffle=False,
         )
 
-        print("Initializing CLIP model")
-        clip_model, optimizer, criterion, scheduler = _initialize_clip_model(
-            txt_emb_dim,
-            output_dim,
-            dropout,
-            learning_rate,
-            weight_decay,
-            device,
-        )
+        val_k_fold = KFold(n_splits=sample_size // val_size)
+        train_val_split = val_k_fold.split(text_emb[train_val_index])
+        for val_fold, (train_index, val_index) in enumerate(train_val_split):
 
-        print("Training CLIP model")
-        clip_model, _, _ = train_clip_model(
-            clip_model,
-            criterion,
-            optimizer,
-            num_epochs,
-            train_loader,
-            val_loader,
-            best_model_fn,
-            last_model_fn,
-            device,
-            plot_verbose=plot_verbose,
-        )
+            if val_fold >= val_folds_to_run:
+                break
 
-        print("Evaluating CLIP model")
-        metrics = _evaluate_clip_model(
-            clip_model,
-            train_loader,
-            val_loader,
-            test_loader,
-            best_model_fn,
-            last_model_fn,
-            device,
-            plot_verbose=plot_verbose,
-        )
+            train_loader = _get_data_loader(
+                img_emb[train_val_index][train_index],
+                text_emb[train_val_index][train_index],
+                batch_size,
+                shuffle=True,
+            )
 
-    print(f"Metrics after {fold} folds")
+            val_loader = _get_data_loader(
+                img_emb[train_val_index][val_index],
+                text_emb[train_val_index][val_index],
+                batch_size,
+                shuffle=False,
+            )
+
+            print("Initializing CLIP model")
+            clip_model, optimizer, criterion, scheduler = _initialize_clip_model(
+                text_emb_dim,
+                output_dim,
+                dropout,
+                learning_rate,
+                weight_decay,
+                device,
+            )
+
+            print("Training CLIP model")
+            clip_model, _, _ = train_clip_model(
+                clip_model,
+                criterion,
+                optimizer,
+                num_epochs,
+                train_loader,
+                val_loader,
+                best_model_fn,
+                last_model_fn,
+                device,
+                plot_verbose=plot_verbose,
+            )
+
+            print("Evaluating CLIP model")
+            metrics = _evaluate_clip_model(
+                clip_model,
+                train_loader,
+                val_loader,
+                test_loader,
+                best_model_fn,
+                last_model_fn,
+                device,
+                plot_verbose=plot_verbose,
+            )
+
+    print(f"Metrics after {val_fold} folds")
     for loader_name in ["train", "validation", "test"]:
         print("=" * 10, loader_name, "=" * 10)
         for metric_name in ["recall@10", "recall@100", "mix_match"]:
