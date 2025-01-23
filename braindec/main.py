@@ -1,6 +1,5 @@
 import os
 import os.path as op
-import pickle
 from collections import defaultdict
 from functools import partial
 
@@ -126,8 +125,8 @@ def main():
     print(f"Using device: {device}")
 
     # Load dataset
-    text_emb = np.load(op.join(data_dir, "text_embedding.npy"))
     img_emb = np.load(op.join(data_dir, "image_embedding.npy"))
+    text_emb = np.load(op.join(data_dir, "text_embedding.npy"))
 
     assert text_emb.shape[0] == img_emb.shape[0]
 
@@ -152,8 +151,6 @@ def main():
     test_k_fold = KFold(n_splits=sample_size // test_size)
     train_test_split = test_k_fold.split(text_emb)
     for test_fold, (train_val_index, test_index) in enumerate(train_test_split):
-        test_index = test_index[:test_size]  # Strict 1000 validation samples
-
         if test_fold >= test_folds_to_run:
             break
 
@@ -164,10 +161,9 @@ def main():
             shuffle=False,
         )
 
-        val_k_fold = KFold(n_splits=sample_size // val_size)
+        val_k_fold = KFold(n_splits=len(train_val_index) // val_size)
         train_val_split = val_k_fold.split(text_emb[train_val_index])
         for val_fold, (train_index, val_index) in enumerate(train_val_split):
-
             if val_fold >= val_folds_to_run:
                 break
 
