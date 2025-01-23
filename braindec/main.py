@@ -100,6 +100,7 @@ def _evaluate_clip_model(
 
         metrics[loader_name]["recall@10"].append(nq_perf)
         metrics[loader_name]["recall@100"].append(nq_perf_100)
+        metrics[loader_name]["recall@all"].append(nq_perf_all)
         metrics[loader_name]["mix_match"].append(100 * mix_match(similarity))
 
     return metrics
@@ -117,16 +118,19 @@ def main():
     results_dir = op.join(project_dir, "results")
     output_dir = op.join(results_dir, "neurostore")
     os.makedirs(output_dir, exist_ok=True)
+    content = "abstract"
+    model_id = "mistralai/Mistral-7B-v0.1"  # BrainGPT/BrainGPT-7B-v0.2
+    model_name = model_id.split("/")[-1]  # Embedding model name
 
-    best_model_fn = op.join(output_dir, "best_clip-model.pth")
-    last_model_fn = op.join(output_dir, "last_clip-model.pth")
+    best_model_fn = op.join(output_dir, f"best_clip-model_{content}_{model_name}.pth")
+    last_model_fn = op.join(output_dir, f"last_clip-model_{content}_{model_name}.pth")
 
     device = _get_device()
     print(f"Using device: {device}")
 
     # Load dataset
-    img_emb = np.load(op.join(data_dir, "image_embedding.npy"))
-    text_emb = np.load(op.join(data_dir, "text_embedding.npy"))
+    img_emb = np.load(op.join(data_dir, f"image_embedding_{content}.npy"))
+    text_emb = np.load(op.join(data_dir, f"text_embedding_{content}_{model_name}.npy"))
 
     assert text_emb.shape[0] == img_emb.shape[0]
 

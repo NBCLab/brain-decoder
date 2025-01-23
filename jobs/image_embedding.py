@@ -22,14 +22,15 @@ def main(project_dir):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     nilearn_data = op.join(data_dir, "nilearn")
+    content = "abstract"
 
-    dset = nimare.dataset.Dataset.load(op.join(data_dir, "neurostore-abstract_dset.pkl"))
+    dset = nimare.dataset.Dataset.load(op.join(data_dir, f"neurostore-{content}_dset.pkl"))
 
     image_emb_gene = ImageEmbedding(data_dir=nilearn_data)
     image_embedding_arr = image_emb_gene(dset)
 
     print(image_embedding_arr.shape)
-    np.save(op.join(data_dir, "image_embedding.npy"), image_embedding_arr)
+    np.save(op.join(data_dir, f"image_embedding_{content}.npy"), image_embedding_arr)
 
 
 def _main(argv=None):
