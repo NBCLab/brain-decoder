@@ -6,18 +6,15 @@ from functools import partial
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import torch
 from sklearn.model_selection import KFold
-from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from braindec.dataset import MRIDataset, create_balanced_loaders, create_random_loaders
 from braindec.loss import ClipLoss
 from braindec.metrics import mix_match, recall_n
-from braindec.model import CLIP, Decoder, count_parameters
+from braindec.model import CLIP, count_parameters
 from braindec.plot import plot_matrix
-from braindec.train import predict, train_clip_model, train_decoder_model
+from braindec.train import predict, train_clip_model
 from braindec.utils import _get_device
 
 
@@ -54,22 +51,6 @@ def _initialize_clip_model(
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, len(train_loader)*num_epochs)
     # scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
     # summary(model, (1, 28, 28))
-    return model, optimizer, criterion, scheduler
-
-
-def _initialize_decoder_model(
-    embedding_dim,
-    output_dim,
-    dropout,
-    learning_rate,
-    weight_decay,
-    device,
-):
-    model = Decoder(embedding_dim, output_dim, dropout).to(device)
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    scheduler = None
-
     return model, optimizer, criterion, scheduler
 
 
@@ -141,8 +122,6 @@ def main():
 
     best_model_fn = op.join(output_dir, "best_clip-model.pth")
     last_model_fn = op.join(output_dir, "last_clip-model.pth")
-    best_decoder_fn = op.join(output_dir, "best_decoder-model.pth")
-    last_decoder_fn = op.join(output_dir, "last_decoder-model.pth")
 
     device = _get_device()
     print(f"Using device: {device}")
@@ -209,70 +188,40 @@ def main():
             device,
         )
 
-        if op.exists(best_model_fn):
-            # Load best model
-            print("Loading best model")
-            clip_model.load_state_dict(torch.load(best_model_fn))
-        else:
-            print("Training CLIP model")
-            clip_model, _, _ = train_clip_model(
-                clip_model,
-                criterion,
-                optimizer,
-                num_epochs,
-                train_loader,
-                val_loader,
-                best_model_fn,
-                last_model_fn,
-                device,
-                plot_verbose=plot_verbose,
-            )
-
-            print("Evaluating CLIP model")
-            metrics = _evaluate_clip_model(
-                clip_model,
-                train_loader,
-                val_loader,
-                test_loader,
-                best_model_fn,
-                last_model_fn,
-                device,
-                plot_verbose=plot_verbose,
-            )
-
-        print("Initializing Decoder model")
-        decoder_model, optimizer_dec, criterion_dec, scheduler_dec = _initialize_decoder_model(
-            img_emb_dim,
-            txt_emb_dim,
-            dropout,
-            learning_rate,
-            weight_decay,
-            device,
-        )
-
-        print("Training Decoder model")
-        decoder_model, _, _ = train_decoder_model(
-            decoder_model,
+        print("Training CLIP model")
+        clip_model, _, _ = train_clip_model(
             clip_model,
-            criterion_dec,
-            optimizer_dec,
+            criterion,
+            optimizer,
             num_epochs,
             train_loader,
             val_loader,
-            best_decoder_fn,
-            last_decoder_fn,
+            best_model_fn,
+            last_model_fn,
             device,
             plot_verbose=plot_verbose,
         )
 
-    # print(f"Metrics after {fold} folds")
-    # for loader_name in ["train", "validation", "test"]:
-    #     print("=" * 10, loader_name, "=" * 10)
-    #     for metric_name in ["recall@10", "recall@100", "mix_match"]:
-    #         print(
-    #             f"{metric_name}: {np.mean(metrics[loader_name][metric_name]):.3f}"
-    #             f" +- {np.std(metrics[loader_name][metric_name]):.3f}"
-    #         )
+        print("Evaluating CLIP model")
+        metrics = _evaluate_clip_model(
+            clip_model,
+            train_loader,
+            val_loader,
+            test_loader,
+            best_model_fn,
+            last_model_fn,
+            device,
+            plot_verbose=plot_verbose,
+        )
+
+    print(f"Metrics after {fold} folds")
+    for loader_name in ["train", "validation", "test"]:
+        print("=" * 10, loader_name, "=" * 10)
+        for metric_name in ["recall@10", "recall@100", "mix_match"]:
+            print(
+                f"{metric_name}: {np.mean(metrics[loader_name][metric_name]):.3f}"
+                f" +- {np.std(metrics[loader_name][metric_name]):.3f}"
+            )
 
 
 if __name__ == "__main__":
