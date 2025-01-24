@@ -16,6 +16,14 @@ from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 from braindec.utils import _get_device
 
 
+def _coordinates_to_image(dset: Dataset, kernel: str = "mkda"):
+    if kernel == "mkda":
+        kernel = MKDAKernel()
+    else:
+        raise ValueError(f"Kernel {kernel} not supported.")
+    return kernel.transform(dset, return_type="image")
+
+
 class TextEmbedding:
     def __init__(
         self,
@@ -151,23 +159,30 @@ class TextEmbedding:
 
 
 class ImageEmbedding:
-    def __init__(self, data_dir: str = None, n_jobs: int = -1):
+    def __init__(self, data_dir: str = None, atlas: str = "difumo", dimension: int = 512):
         """
         Initialize the image embedding generator with specified model.
 
         Args:
             model_name: Name of the DeiT model to use
         """
-        difumo = datasets.fetch_atlas_difumo(
-            dimension=512,
-            resolution_mm=2,
-            legacy_format=False,
-            data_dir=data_dir,
-        )
-        self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps)
-        self.n_jobs = n_jobs
+        self.data_dir = data_dir
+        self.atlas = atlas
+        self.dimension = dimension
 
-    def generate_embedding(self, dset: Dataset) -> np.ndarray:
+        if atlas == "difumo":
+            difumo = datasets.fetch_atlas_difumo(
+                dimension=dimension,
+                resolution_mm=2,
+                legacy_format=False,
+                data_dir=data_dir,
+            )
+            self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps)
+        else:
+            # Implement other atlases
+            raise ValueError(f"Atlas {atlas} not supported.")
+
+    def generate_embedding(self, images) -> np.ndarray:
         """
         Generate embedding for a single image.
 
@@ -177,14 +192,13 @@ class ImageEmbedding:
         Returns:
             Numpy array containing the embedding
         """
-        # Get images from coordinates
-        kernel = MKDAKernel()
-        self.images = kernel.transform(dset, return_type="image")
-        self.images = concat_imgs(self.images)
+        if isinstance(images, list):
+            # Concat images to improve performance
+            images = concat_imgs(images)
 
-        return self.masker.fit_transform(self.images)
+        return self.masker.fit_transform(images)
 
-    def __call__(self, dset: Dataset) -> np.ndarray:
+    def __call__(self, images) -> np.ndarray:
         """
         Generate embeddings for input images.
 
@@ -194,4 +208,5 @@ class ImageEmbedding:
         Returns:
             Numpy array of embeddings
         """
-        return self.generate_embedding(dset)
+        # Accept nifti and path to image as input
+        return self.generate_embedding(images)

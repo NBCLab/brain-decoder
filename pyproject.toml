@@ -46,6 +46,8 @@ doc = [
     "sphinx-gallery",
 ]
 
+plotting = ["neuromaps", "surfplot"]
+
 dev = ["black", "pre-commit", "isort", "flake8-pyproject"]
 # For testing of oldest usable versions of dependencies.
 min = ["nimare==0.2.1"]
@@ -64,8 +66,9 @@ test = [
 docs = ["braindec[doc]"]
 devs = ["braindec[dev]"]
 tests = ["braindec[test]"]
+plottings = ["braindec[plotting]"]
 minimum = ["braindec[min]"]
-all = ["braindec[doc,dev,test]"]
+all = ["braindec[doc,dev,test,plotting]"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["braindec"]

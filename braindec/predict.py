@@ -5,12 +5,9 @@ import os.path as op
 import numpy as np
 import pandas as pd
 import torch
-from nilearn import datasets
 from nilearn.image import load_img
-from nilearn.maskers import MultiNiftiMapsMasker
 
-from braindec.dataset import _get_vocabulary
-from braindec.embedding import TextEmbedding
+from braindec.embedding import ImageEmbedding
 from braindec.model import build_model
 from braindec.utils import _get_device, get_data_dir
 
@@ -24,24 +21,10 @@ def preprocess_image(image, data_dir=None):
     """
     nilearn_dir = get_data_dir(op.join(data_dir, "nilearn"))
 
-    # Preprocess the image
-    difumo = datasets.fetch_atlas_difumo(
-        dimension=512,
-        resolution_mm=2,
-        legacy_format=False,
-        data_dir=nilearn_dir,
-    )
-    masker_parc = MultiNiftiMapsMasker(maps_img=difumo.maps)
-    return torch.from_numpy(masker_parc.fit_transform(image)).float()
+    image_emb_gene = ImageEmbedding(data_dir=nilearn_dir)
+    image_embedding_arr = image_emb_gene(image)
 
-
-def _preprocess_vocabulary(source, model_id, data_dir=None):
-    generator = TextEmbedding(model_name=model_id)
-    # vocabulary = _fetch_vocabulary(source=source, data_dir=data_dir)
-    vocabulary = _get_vocabulary(source=source, data_dir=data_dir)
-    vocabulary_emb = np.array([generator(f"{c}") for c in vocabulary])
-
-    return vocabulary, torch.from_numpy(vocabulary_emb).float()
+    return torch.from_numpy(image_embedding_arr).float()
 
 
 def image_to_labels(
@@ -67,7 +50,7 @@ def image_to_labels(
 
     image = load_img(image)
     image_input = preprocess_image(image, data_dir=data_dir).to(device)
-    text_inputs = torch.from_numpy(vocabulary_emb).float()
+    text_inputs = torch.from_numpy(vocabulary_emb).float().to(device)
 
     # Calculate features
     model = build_model(model_path, device=device)
@@ -81,13 +64,7 @@ def image_to_labels(
     similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
     values, indices = similarity[0].topk(topk)
 
-    print("\nTop predictions:\n")
-    for value, index in zip(values, indices):
-        print(f"{vocabulary[index]:>16s}: {100 * value.item():.2f}%")
-
     probability = values.cpu().detach().numpy()
     indices = indices.cpu().detach().numpy()
-    # Print the result
-    result_df = pd.DataFrame({"label": np.array(vocabulary)[indices], "probability": probability})
 
-    return result_df
+    return pd.DataFrame({"label": np.array(vocabulary)[indices], "probability": probability})
