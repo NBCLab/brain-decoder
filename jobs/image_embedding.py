@@ -29,7 +29,6 @@ def main(project_dir):
     image_emb_gene = ImageEmbedding(data_dir=nilearn_data)
     image_embedding_arr = image_emb_gene(dset)
 
-    print(image_embedding_arr.shape)
     np.save(op.join(data_dir, f"image_embedding_{content}.npy"), image_embedding_arr)
 
 

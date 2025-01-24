@@ -2,36 +2,40 @@ import os
 import os.path as op
 
 import numpy as np
-from nilearn.datasets import fetch_mixed_gambles
+from nilearn import datasets
 
 from braindec.predict import image_to_labels
 
 
-def main(project_dir):
+def main():
+    project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     nilearn_dir = op.join(data_dir, "nilearn")
     results_dir = op.join(project_dir, "results")
-    images_source = "mixed-gambles"
+    images_source = "localizer"  # mixed-gambles, localizer
     output_dir = op.join(results_dir, "predictions", images_source)
     content = "abstract"
     source = "cogatlas"
 
     os.makedirs(output_dir, exist_ok=True)
 
-    model_id = "mistralai/Mistral-7B-v0.1"
+    model_id = "BrainGPT/BrainGPT-7B-v0.2"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
     model_name = model_id.split("/")[-1]
 
     if images_source == "mixed-gambles":
-        data = fetch_mixed_gambles(n_subjects=16, data_dir=nilearn_dir)
+        data = datasets.fetch_mixed_gambles(n_subjects=16, data_dir=nilearn_dir)
         images = data.zmaps
+    elif images_source == "localizer":
+        data = datasets.fetch_localizer_contrasts(["left vs right button press"], n_subjects=10)
+        images = data.cmaps
     else:
         raise ValueError(f"Images source {images_source} not supported.")
 
     model_path = op.join(results_dir, "neurostore", f"best_clip-model_{content}_{model_name}.pth")
-    vocabulary_emb = np.load(op.join(data_dir, f"vocabulary-{source}_embedding_{model_name}.npy"))
+    vocabulary_emb = np.load(op.join(data_dir, f"vocabulary-{source}_embedding-{model_name}.npy"))
 
-    with open(op.join(data_dir, f"vocabulary-{source}_{model_name}.txt"), "r") as f:
+    with open(op.join(data_dir, f"vocabulary-{source}.txt"), "r") as f:
         vocabulary = [line.strip() for line in f]
 
     for img_i, img in enumerate(images):

@@ -25,22 +25,24 @@ def main(project_dir):
     content = "abstract"
     source = "cogatlas"
 
-    dset = nimare.dataset.Dataset.load(op.join(data_dir, f"neurostore-{content}_dset.pkl"))
+    # dset = nimare.dataset.Dataset.load(op.join(data_dir, f"neurostore-{content}_dset.pkl"))
 
-    model_id = "mistralai/Mistral-7B-v0.1"
+    model_id = "mistralai/Mistral-7B-v0.1"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
     model_name = model_id.split("/")[-1]
     generator = TextEmbedding(model_name=model_id)
-    text_embedding_arr = generator(dset.texts[content].to_list())  # body
+    # text_embedding_arr = generator(dset.texts[content].to_list())  # body
 
-    print(text_embedding_arr.shape)
-    np.save(op.join(data_dir, f"text_embedding_{content}_{model_name}.npy"), text_embedding_arr)
+    # np.save(op.join(data_dir, f"text_embedding_{content}_{model_name}.npy"), text_embedding_arr)
 
     vocabulary = _get_vocabulary(source=source, data_dir=data_dir)
     vocabulary_emb = generator(vocabulary)
-    np.save(op.join(data_dir, f"vocabulary-{source}_embedding_{model_name}.npy"), vocabulary_emb)
-    with open(op.join(data_dir, f"vocabulary-{source}_{model_name}.txt"), "w") as f:
-        for item in vocabulary:
-            f.write("%s\n" % item)
+    np.save(op.join(data_dir, f"vocabulary-{source}_embedding-{model_name}.npy"), vocabulary_emb)
+
+    vocabulary_fn = op.join(data_dir, f"vocabulary-{source}.txt")
+    if not op.exists(vocabulary_fn):
+        with open(vocabulary_fn, "w") as f:
+            for item in vocabulary:
+                f.write("%s\n" % item)
 
 
 def _main(argv=None):
