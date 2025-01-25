@@ -21,7 +21,7 @@ def preprocess_image(image, data_dir=None):
     """
     nilearn_dir = get_data_dir(op.join(data_dir, "nilearn"))
 
-    image_emb_gene = ImageEmbedding(data_dir=nilearn_dir)
+    image_emb_gene = ImageEmbedding(standardize=True, data_dir=nilearn_dir)
     image_embedding_arr = image_emb_gene(image)
 
     return torch.from_numpy(image_embedding_arr).float()

@@ -159,7 +159,13 @@ class TextEmbedding:
 
 
 class ImageEmbedding:
-    def __init__(self, data_dir: str = None, atlas: str = "difumo", dimension: int = 512):
+    def __init__(
+        self,
+        standardize: bool = False,
+        data_dir: str = None,
+        atlas: str = "difumo",
+        dimension: int = 512,
+    ):
         """
         Initialize the image embedding generator with specified model.
 
@@ -177,7 +183,7 @@ class ImageEmbedding:
                 legacy_format=False,
                 data_dir=data_dir,
             )
-            self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps)
+            self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps, standardize=standardize)
         else:
             # Implement other atlases
             raise ValueError(f"Atlas {atlas} not supported.")

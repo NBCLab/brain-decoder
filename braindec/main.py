@@ -119,17 +119,17 @@ def main():
     output_dir = op.join(results_dir, "neurostore")
     os.makedirs(output_dir, exist_ok=True)
     content = "abstract"
-    model_id = "mistralai/Mistral-7B-v0.1"  # BrainGPT/BrainGPT-7B-v0.2
+    model_id = "BrainGPT/BrainGPT-7B-v0.2"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
     model_name = model_id.split("/")[-1]  # Embedding model name
 
-    best_model_fn = op.join(output_dir, f"best_clip-model_{content}_{model_name}.pth")
-    last_model_fn = op.join(output_dir, f"last_clip-model_{content}_{model_name}.pth")
+    best_model_fn = op.join(output_dir, f"best_clip-model_{content}_standardized_{model_name}.pth")
+    last_model_fn = op.join(output_dir, f"last_clip-model_{content}_standardized_{model_name}.pth")
 
     device = _get_device()
     print(f"Using device: {device}")
 
-    # Load dataset
-    img_emb = np.load(op.join(data_dir, f"image_embedding_{content}.npy"))
+    # Load embeddings
+    img_emb = np.load(op.join(data_dir, f"image_embedding_{content}_standardized.npy"))
     text_emb = np.load(op.join(data_dir, f"text_embedding_{content}_{model_name}.npy"))
 
     assert text_emb.shape[0] == img_emb.shape[0]
