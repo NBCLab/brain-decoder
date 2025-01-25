@@ -7,6 +7,7 @@ import shutil
 
 import numpy as np
 import pandas as pd
+import requests
 from nilearn.datasets._utils import fetch_single_file
 
 from braindec.utils import get_data_dir
@@ -125,3 +126,40 @@ def _fetch_vocabulary(
 
     keep = np.array([c_i for c_i, class_ in enumerate(classification) if class_ in subsample])
     return df.values[keep].flatten().tolist()
+
+
+def _get_cogatlas_data(url):
+    try:
+        # Send a GET request to the API
+        response = requests.get(url)
+
+        # Raise an exception for bad responses
+        response.raise_for_status()
+
+        # Parse the JSON response into a Python dictionary
+        tasks = response.json()
+
+    except requests.RequestException as e:
+        print(f"Error retrieving tasks: {e}")
+        return None
+
+    output = {}
+    for task in tasks:
+        if "name" in task and "definition_text" in task:
+            output[task["name"]] = task["definition_text"]
+        elif "name" in task and "definition_text" not in task:
+            output[task["name"]] = ""
+        else:
+            print(f"Task {task} does not have a name or definition_text")
+
+    return output
+
+
+def get_cogatlas_tasks():
+    # API endpoint for tasks
+    return _get_cogatlas_data("https://www.cognitiveatlas.org/api/v-alpha/task")
+
+
+def get_cogatlas_concepts():
+    # API endpoint for concepts
+    return _get_cogatlas_data("https://www.cognitiveatlas.org/api/v-alpha/concept")

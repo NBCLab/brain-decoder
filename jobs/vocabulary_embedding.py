@@ -18,24 +18,47 @@ def _get_parser():
     return parser
 
 
-def main(project_dir):
-    project_dir = op.abspath(project_dir)
-    data_dir = op.join(project_dir, "data")
-    source = "neurosynth"  # cogatlas, neurosynth
+def _write_vocabulary(vocabulary, vocabulary_fn, vocabulary_emb, vocabulary_emb_fn):
+    np.save(vocabulary_emb_fn, vocabulary_emb)
 
-    model_id = "BrainGPT/BrainGPT-7B-v0.2"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
-    model_name = model_id.split("/")[-1]
-    generator = TextEmbedding(model_name=model_id)
-
-    vocabulary = _get_vocabulary(source=source, data_dir=data_dir)
-    vocabulary_emb = generator(vocabulary)
-    np.save(op.join(data_dir, f"vocabulary-{source}_embedding-{model_name}.npy"), vocabulary_emb)
-
-    vocabulary_fn = op.join(data_dir, f"vocabulary-{source}.txt")
     if not op.exists(vocabulary_fn):
         with open(vocabulary_fn, "w") as f:
             for item in vocabulary:
                 f.write("%s\n" % item)
+
+
+def main(project_dir):
+    project_dir = op.abspath(project_dir)
+    data_dir = op.join(project_dir, "data")
+    source = "cogatlas"  # cogatlas, neurosynth
+    max_length = 512
+
+    model_id = "BrainGPT/BrainGPT-7B-v0.2"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
+    model_name = model_id.split("/")[-1]
+    generator = TextEmbedding(model_name=model_id, max_length=max_length)
+
+    if source == "cogatlas":
+        tasks_dict, concepts_dict = _get_vocabulary(source="cogatlas", data_dir=data_dir)
+        for category, data_dict in zip(["task", "concept"], [tasks_dict, concepts_dict]):
+            query, vocabulary = [], []
+            for name, definition in data_dict.items():
+                query.append(f"{name}: {definition}"[:max_length])
+                vocabulary.append(name)
+
+            vocabulary_emb = generator(query)
+
+            vocabulary_fn = op.join(data_dir, f"vocabulary-{source}-{category}.txt")
+            vocabulary_emb_fn = op.join(
+                data_dir, f"vocabulary-{source}-{category}_embedding-{model_name}.npy"
+            )
+            _write_vocabulary(vocabulary, vocabulary_fn, vocabulary_emb, vocabulary_emb_fn)
+    else:
+        vocabulary = _get_vocabulary(source=source, data_dir=data_dir)
+        vocabulary_emb = generator(vocabulary)
+
+        vocabulary_fn = op.join(data_dir, f"vocabulary-{source}.txt")
+        vocabulary_emb_fn = op.join(data_dir, f"vocabulary-{source}_embedding-{model_name}.npy")
+        _write_vocabulary(vocabulary, vocabulary_fn, vocabulary_emb, vocabulary_emb_fn)
 
 
 def _main(argv=None):

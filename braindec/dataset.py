@@ -15,6 +15,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, normalize
 from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 
+from braindec.fetcher import get_cogatlas_concepts, get_cogatlas_tasks
 from braindec.utils import get_data_dir
 
 
@@ -110,12 +111,15 @@ def _get_vocabulary(source="neurosynth", data_dir=None):
             for line in file:
                 vocabulary.append(line.strip())
 
-    elif source == "cogatlas":
-        cogatlas = extract.download_cognitive_atlas(data_dir=data_dir, overwrite=False)
-        id_df = pd.read_csv(cogatlas["ids"])
-        vocabulary = id_df["name"].unique().tolist()
+        return vocabulary
 
-    return vocabulary
+    elif source == "cogatlas":
+        tasks_dict = get_cogatlas_tasks()
+        concepts_dict = get_cogatlas_concepts()
+
+        return tasks_dict, concepts_dict
+    else:
+        raise ValueError(f"Source {source} not supported.")
 
 
 def _neurostore_to_nimare(data_dir, source="all", content="body"):

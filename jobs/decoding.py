@@ -12,6 +12,13 @@ from braindec.plot import plot_surf
 from braindec.predict import image_to_labels
 
 
+def _read_vocabulary(vocabulary_fn, vocabulary_emb_fn):
+    vocabulary_emb = np.load(vocabulary_emb_fn)
+    with open(vocabulary_fn, "r") as f:
+        vocabulary = [line.strip() for line in f]
+    return vocabulary, vocabulary_emb
+
+
 def main():
     project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
     project_dir = op.abspath(project_dir)
@@ -21,10 +28,10 @@ def main():
     results_dir = op.join(project_dir, "results")
     images_source = "pain"  # mixed-gambles, localizer, pain
     content = "abstract"
-    source = "neurosynth"  # cogatlas, neurosynth
+    source = "cogatlas"  # cogatlas, neurosynth
     topk = 10  # top k predictions
 
-    output_dir = op.join(results_dir, "predictions_neurosynth_standardized", images_source)
+    output_dir = op.join(results_dir, f"predictions_{source}_standardized", images_source)
     os.makedirs(output_dir, exist_ok=True)
 
     # --------------------------------------------------------------------
@@ -48,10 +55,6 @@ def main():
         results_dir, "neurostore", f"best_clip-model_{content}_standardized_{model_name}.pth"
     )
 
-    vocabulary_emb = np.load(op.join(data_dir, f"vocabulary-{source}_embedding-{model_name}.npy"))
-    with open(op.join(data_dir, f"vocabulary-{source}.txt"), "r") as f:
-        vocabulary = [line.strip() for line in f]
-
     # --------------------------------------------------------------------
     # Load images to decode
     if images_source == "mixed-gambles":
@@ -72,19 +75,28 @@ def main():
         # Plot map for debugging
         plot_surf(img, op.join(output_dir, f"{img_i:02d}_map.png"), vmax=8)
 
-        predictions_df = image_to_labels(
-            img,
-            model_path,
-            vocabulary,
-            vocabulary_emb,
-            topk=topk,
-            data_dir=data_dir,
-        )
+        for category in ["task", "concept"]:
+            vocabulary_fn = op.join(data_dir, f"vocabulary-{source}-{category}.txt")
+            vocabulary_emb_fn = op.join(
+                data_dir, f"vocabulary-{source}-{category}_embedding-{model_name}.npy"
+            )
+            vocabulary, vocabulary_emb = _read_vocabulary(vocabulary_fn, vocabulary_emb_fn)
 
-        predictions_df.to_csv(
-            op.join(output_dir, f"{img_i:02d}_predictions_{content}_{model_name}.csv"),
-            index=False,
-        )
+            predictions_df = image_to_labels(
+                img,
+                model_path,
+                vocabulary,
+                vocabulary_emb,
+                topk=topk,
+                data_dir=data_dir,
+            )
+
+            predictions_df.to_csv(
+                op.join(
+                    output_dir, f"{img_i:02d}_predictions_{content}_{category}_{model_name}.csv"
+                ),
+                index=False,
+            )
 
         ns_predictions_df = decoder.transform(img)
         ns_predictions_df = ns_predictions_df.sort_values(by="r", ascending=False).head(topk)
