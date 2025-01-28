@@ -39,10 +39,12 @@ def extract_text(text, intro_occurrence=1):
 
     Parameters:
     text (str): The input text to process
-    intro_occurrence (int): Which occurrence of Introduction to use (default: 2 for second occurrence)
+    intro_occurrence (int): Which occurrence of Introduction to use (default: 2 for second
+    occurrence)
 
     Returns:
-    str: The extracted text between specified Introduction and last References, or None if not found
+    str: The extracted text between specified Introduction and last References, or None if not
+    found
     """
     try:
         # Find the nth occurrence of "Introduction"
