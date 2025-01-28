@@ -1,4 +1,5 @@
 import json
+import os
 import os.path as op
 from collections import Counter
 from glob import glob
@@ -7,7 +8,6 @@ import nimare
 import numpy as np
 import pandas as pd
 import torch
-from nimare import extract
 from nimare.extract import fetch_neuroquery, fetch_neurosynth
 from nimare.io import convert_neurosynth_to_dataset
 from nimare.meta.kernel import MKDAKernel
@@ -122,6 +122,106 @@ def _get_vocabulary(source="neurosynth", data_dir=None):
         raise ValueError(f"Source {source} not supported.")
 
 
+def _export_coordinates(pmid, coords_df, coords_fn):
+    out_coords_df = coords_df[coords_df["pmid"] == pmid].drop(columns=["pmid", "pmcid"])
+    if not out_coords_df.empty:
+        out_coords_df.to_csv(coords_fn, index=False)
+
+
+def _export_text(pmid, text_df, text_fn):
+    sub_text_df = text_df[text_df["pmid"] == pmid]
+    out_text = sub_text_df["body"].values
+    if len(out_text) > 0:
+        with open(text_fn, "w") as f:
+            f.write(out_text[0])
+
+
+def _export_metadata(pmid, text_df, metadata_df, metadata_fn):
+    out_metadata = {
+        "title": "",
+        "authors": "",
+        "journal": "",
+        "keywords": "",
+        "abstract": "",
+        "publication_year": "",
+        "coordinate_space": "",
+        "license": "",
+        "text": "",
+    }
+
+    sub_text_df = text_df[text_df["pmid"] == pmid]
+    out_text = sub_text_df["body"].values[0]
+    out_metadata["title"] = sub_text_df["title"].values[0]
+    out_metadata["keywords"] = sub_text_df["keywords"].values[0]
+    out_metadata["abstract"] = sub_text_df["abstract"].values[0]
+
+    sub_metadata_df = metadata_df[metadata_df["pmid"] == pmid]
+    out_metadata["journal"] = sub_metadata_df["journal"].values[0]
+    publication_year = sub_metadata_df["publication_year"].values[0]
+    if not pd.isna(publication_year):
+        out_metadata["publication_year"] = str(publication_year)
+    else:
+        out_metadata["publication_year"] = ""
+    out_metadata["license"] = sub_metadata_df["license"].values[0]
+
+    out_metadata["text"] = "true" if len(out_text) > 0 else "false"
+
+    with open(metadata_fn, "w") as f:
+        json.dump(out_metadata, f)
+
+
+def _pubget_to_neurostore(pubget_dir, neurostore_dir):
+    metadata_fn = op.join(pubget_dir, "metadata.csv")
+    coords_fn = op.join(pubget_dir, "coordinates.csv")
+    text_fn = op.join(pubget_dir, "text.csv")
+
+    existing_pmids = os.listdir(neurostore_dir)
+
+    metadata_df = pd.read_csv(metadata_fn)
+    metadata_df["pmid"] = metadata_df["pmid"].fillna(-1).astype(int)
+    coords_df = pd.read_csv(coords_fn)
+    text_df = pd.read_csv(text_fn)
+    coords_df = pd.merge(coords_df, metadata_df[["pmid", "pmcid"]], on="pmcid", how="left")
+    text_df = pd.merge(text_df, metadata_df[["pmid", "pmcid"]], on="pmcid", how="left")
+
+    pmids = metadata_df["pmid"].values
+
+    for pmid_ in pmids:
+        if pmid_ == -1:
+            continue
+
+        pmid = str(int(pmid_))
+        pmid_dir = op.join(neurostore_dir, pmid)
+        pubget_preproc_dir = op.join(pmid_dir, "processed", "pubget")
+
+        if str(pmid) in existing_pmids:
+            ns_coords_fn = op.join(pubget_preproc_dir, "coordinates.csv")
+            ns_meta_fn = op.join(pubget_preproc_dir, "metadata.json")
+            ns_text_fn = op.join(pubget_preproc_dir, "text.txt")
+
+            if op.exists(pubget_preproc_dir):
+                if not op.exists(ns_coords_fn):
+                    os.makedirs(pubget_preproc_dir)
+                    _export_coordinates(pmid_, coords_df, ns_coords_fn)
+                    print(pmid)
+                else:
+                    continue
+
+                if not op.exists(ns_text_fn):
+                    _export_text(pmid_, text_df, ns_text_fn)
+
+                if not op.exists(ns_meta_fn):
+                    _export_metadata(pmid_, text_df, metadata_df, ns_meta_fn)
+
+                continue
+
+        os.makedirs(pubget_preproc_dir, exist_ok=True)
+        _export_coordinates(pmid_, coords_df, ns_coords_fn)
+        _export_text(pmid_, text_df, ns_text_fn)
+        _export_metadata(pmid_, text_df, metadata_df, ns_meta_fn)
+        print(pmid)
+
+
 def _neurostore_to_nimare(data_dir, source="all", content="body"):
     """
     Convert the NeuroStore dataset to a NiMARE dataset.
@@ -133,6 +233,8 @@ def _neurostore_to_nimare(data_dir, source="all", content="body"):
         proc_dir = op.join(dset_dir, "processed")
         if not op.exists(proc_dir):
             continue
+
+        pmid = op.basename(dset_dir)
 
         print(f"Processing {dset_dir}")
 
@@ -160,6 +262,7 @@ def _neurostore_to_nimare(data_dir, source="all", content="body"):
                 print(f"\tPubget not found in {extracts}")
                 continue
 
+        extract = op.basename(sel_dirs)
         coord_fn = op.join(sel_dirs, "coordinates.csv")
         meta_fn = op.join(sel_dirs, "metadata.json")
         text_fn = op.join(sel_dirs, "text.txt")
@@ -221,6 +324,10 @@ def _neurostore_to_nimare(data_dir, source="all", content="body"):
                 "x": coord_df["x"].values,
                 "y": coord_df["y"].values,
                 "z": coord_df["z"].values,
+            },
+            "metadata": {
+                "pmid": pmid,
+                "source": extract,
             },
             "text": {
                 "title": metadata["title"],
