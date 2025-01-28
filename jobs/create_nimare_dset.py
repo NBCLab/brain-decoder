@@ -18,16 +18,10 @@ def _get_parser():
 def main(project_dir):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
-    neurostore_dir = op.join(data_dir, "neurostore")
+    neurostore_dir = op.join(data_dir, "pubmed")
 
-    dset_pubget = _neurostore_to_nimare(neurostore_dir, source="pubget")
-    dset_pubget.save(op.join(data_dir, "neurostore-pubget_dset.pkl"))
-
-    dset_abstract = _neurostore_to_nimare(neurostore_dir, content="abstract")
-    dset_abstract.save(op.join(data_dir, "neurostore-abstract_dset.pkl"))
-
-    dset_body = _neurostore_to_nimare(neurostore_dir)
-    dset_body.save(op.join(data_dir, "neurostore-body_dset.pkl"))
+    dset = _neurostore_to_nimare(neurostore_dir)
+    dset.save(op.join(data_dir, "dset-pubmed_nimare.pkl"))
 
 
 def _main(argv=None):
