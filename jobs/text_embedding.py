@@ -15,22 +15,37 @@ def _get_parser():
         required=True,
         help="Path to project directory",
     )
+    parser.add_argument(
+        "--section",
+        dest="section",
+        default="abstract",
+        help="Section to extract text from (default: abstract). Possible values: abstract, body.",
+    )
+    parser.add_argument(
+        "--model_id",
+        dest="model_id",
+        default="mistralai/Mistral-7B-v0.1",
+        help="Model ID for text embedding (default: mistralai/Mistral-7B-v0.1). Possible values: "
+        "mistralai/Mistral-7B-v0.1, meta-llama/Llama-2-7b-chat-hf, BrainGPT/BrainGPT-7B-v0.1, "
+        "BrainGPT/BrainGPT-7B-v0.2.",
+    )
     return parser
 
 
-def main(project_dir):
+def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1"):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
-    content = "abstract"
-
-    dset = nimare.dataset.Dataset.load(op.join(data_dir, f"neurostore-{content}_dset.pkl"))
-
-    model_id = "mistralai/Mistral-7B-v0.1"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
     model_name = model_id.split("/")[-1]
-    generator = TextEmbedding(model_name=model_id)
-    text_embedding_arr = generator(dset.texts[content].to_list())  # body
 
-    np.save(op.join(data_dir, f"text_embedding_{content}_{model_name}.npy"), text_embedding_arr)
+    dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_nimare.pkl"))
+
+    generator = TextEmbedding(model_name=model_id)
+    text_embedding_arr = generator(dset.texts[section].to_list())  # body
+
+    np.save(
+        op.join(data_dir, f"text_section-{section}_embedding-{model_name}.npy"),
+        text_embedding_arr,
+    )
 
 
 def _main(argv=None):
