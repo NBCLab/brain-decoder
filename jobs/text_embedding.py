@@ -29,17 +29,23 @@ def _get_parser():
         "mistralai/Mistral-7B-v0.1, meta-llama/Llama-2-7b-chat-hf, BrainGPT/BrainGPT-7B-v0.1, "
         "BrainGPT/BrainGPT-7B-v0.2.",
     )
+    parser.add_argument(
+        "--device",
+        dest="device",
+        default=None,
+        help="Device to use for computation (default: None). Possible values: cpu, mps, cuda.",
+    )
     return parser
 
 
-def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1"):
+def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", device=None):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     model_name = model_id.split("/")[-1]
 
     dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_nimare.pkl"))
 
-    generator = TextEmbedding(model_name=model_id)
+    generator = TextEmbedding(model_name=model_id, device=device)
     text_embedding_arr = generator(dset.texts[section].to_list())  # body
 
     np.save(

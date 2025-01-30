@@ -11,6 +11,7 @@ from nilearn.maskers import MultiNiftiMapsMasker
 from nimare.dataset import Dataset
 from nimare.meta.kernel import MKDAKernel
 from peft import PeftConfig, PeftModel
+from tqdm import tqdm
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 
 from braindec.utils import _get_device
@@ -27,23 +28,31 @@ def _coordinates_to_image(dset: Dataset, kernel: str = "mkda"):
 class TextEmbedding:
     def __init__(
         self,
-        vocabulary: list = None,
         model_name: str = "BrainGPT/BrainGPT-7B-v0.2",
         max_length: int = 512,
+        device: str = None,
     ):
         """
         Initialize the embedding generator with specified model and parameters.
 
         Args:
-            model_name: Name of the model to use (mistralai/Mistral-7B-v0.1)
+            model_name: Name of the model to use. Supported models are:
+                - "mistralai/Mistral-7B-v0.1"
+                - "meta-llama/Llama-2-7b-chat-hf"
+                - "BrainGPT/BrainGPT-7B-v0.1"
+                - "BrainGPT/BrainGPT-7B-v0.2"
             max_length: Maximum token length for each chunk
+            device: Device to use for computation
         """
-        self.device = _get_device()
+        self.device = _get_device() if device is None else device
         self.model_name = model_name
 
         if model_name == "mistralai/Mistral-7B-v0.1":
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.model = AutoModel.from_pretrained(model_name).to(self.device)
+        elif model_name == "meta-llama/Llama-2-7b-chat-hf":
+            self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+            self.model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
         elif model_name == "BrainGPT/BrainGPT-7B-v0.1":
             config = PeftConfig.from_pretrained(model_name)
             model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
@@ -61,7 +70,6 @@ class TextEmbedding:
             raise ValueError(f"Model name {model_name} not supported.")
 
         self.max_length = max_length
-        self.vocabulary = vocabulary
 
     def chunk_text(self, text: str) -> List[str]:
         """
@@ -79,7 +87,10 @@ class TextEmbedding:
 
         # Split into chunks while trying to respect sentence boundaries
         chunks = textwrap.wrap(
-            text, width=chars_per_chunk, break_long_words=False, break_on_hyphens=False
+            text,
+            width=chars_per_chunk,
+            break_long_words=False,
+            break_on_hyphens=False,
         )
 
         return chunks
@@ -133,7 +144,7 @@ class TextEmbedding:
 
         # Generate embeddings for each chunk
         chunk_embeddings = []
-        for chunk in chunks:
+        for chunk in tqdm(chunks, desc="Processing chunks", leave=False):
             embedding = self.generate_embedding(chunk)
             chunk_embeddings.append(embedding)
 
@@ -155,7 +166,12 @@ class TextEmbedding:
         if isinstance(text, str):
             return self.process_large_text(text)
         else:
-            return np.stack([self.process_large_text(t) for t in text])
+            # Process multiple texts with progress bar
+            embeddings = []
+            for t in tqdm(text, desc="Processing texts"):
+                embeddings.append(self.process_large_text(t))
+
+            return np.stack(embeddings)
 
 
 class ImageEmbedding:
