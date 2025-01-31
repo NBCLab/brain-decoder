@@ -31,11 +31,11 @@ def main(project_dir):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     source = "cogatlas"  # cogatlas, neurosynth
-    max_length = 512
 
     model_id = "BrainGPT/BrainGPT-7B-v0.2"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
     model_name = model_id.split("/")[-1]
-    generator = TextEmbedding(model_name=model_id, max_length=max_length)
+    generator = TextEmbedding(model_name=model_id)
+    max_length = generator.max_length  # Use the max lenght specified in the model
 
     if source == "cogatlas":
         tasks_dict, concepts_dict = _get_vocabulary(source="cogatlas", data_dir=data_dir)

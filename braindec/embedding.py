@@ -29,7 +29,7 @@ class TextEmbedding:
     def __init__(
         self,
         model_name: str = "BrainGPT/BrainGPT-7B-v0.2",
-        max_length: int = 512,
+        max_length: int = None,
         device: str = None,
     ):
         """
@@ -42,7 +42,7 @@ class TextEmbedding:
                 - "BrainGPT/BrainGPT-7B-v0.1"
                 - "BrainGPT/BrainGPT-7B-v0.2"
             max_length: Maximum token length for each chunk
-            device: Device to use for computation
+            device: Device to use for computation. If None, the device is automatically selected.
         """
         self.device = _get_device() if device is None else device
         self.model_name = model_name
@@ -50,15 +50,21 @@ class TextEmbedding:
         if model_name == "mistralai/Mistral-7B-v0.1":
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.model = AutoModel.from_pretrained(model_name).to(self.device)
+            self.max_length = 8192 if max_length is None else max_length
+
         elif model_name == "meta-llama/Llama-2-7b-chat-hf":
             self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
             self.model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+            self.max_length = 4096 if max_length is None else max_length
+
         elif model_name == "BrainGPT/BrainGPT-7B-v0.1":
             config = PeftConfig.from_pretrained(model_name)
             model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
 
             self.model = PeftModel.from_pretrained(model, model_name).to(self.device)
             self.tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
+            self.max_length = 4096 if max_length is None else max_length
+
         elif model_name == "BrainGPT/BrainGPT-7B-v0.2":
             config = PeftConfig.from_pretrained(model_name)
             # The config file has path to the base model instead of the model name
@@ -66,10 +72,9 @@ class TextEmbedding:
 
             self.model = PeftModel.from_pretrained(model, model_name).to(self.device)
             self.tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
+            self.max_length = 8192 if max_length is None else max_length
         else:
             raise ValueError(f"Model name {model_name} not supported.")
-
-        self.max_length = max_length
 
     def chunk_text(self, text: str) -> List[str]:
         """
