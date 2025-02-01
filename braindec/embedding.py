@@ -53,8 +53,8 @@ class TextEmbedding:
             self.max_length = 8192 if max_length is None else max_length
 
         elif model_name == "meta-llama/Llama-2-7b-chat-hf":
-            self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
-            self.model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
             self.max_length = 4096 if max_length is None else max_length
 
         elif model_name == "BrainGPT/BrainGPT-7B-v0.1":
@@ -125,7 +125,7 @@ class TextEmbedding:
         with torch.no_grad():
             outputs = self.model(**inputs)
 
-        if self.model_name.startswith("BrainGPT"):
+        if self.model_name.startswith("BrainGPT") or self.model_name.startswith("meta-llama"):
             # Use the mean of the last hidden state as the embedding
             embeddings = outputs.logits.mean(dim=1)
         else:
