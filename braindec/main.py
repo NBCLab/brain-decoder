@@ -56,6 +56,7 @@ def _initialize_clip_model(
     learning_rate,
     weight_decay,
     device,
+    verbose=1,
 ):
     criterion = ClipLoss()
     is_clip_loss = criterion.__class__ == ClipLoss
@@ -75,7 +76,8 @@ def _initialize_clip_model(
 
     # Get the number of parameters
     num_params = count_parameters(model)
-    print(f"Total number of parameters: {num_params}")
+    if verbose > 1:
+        print(f"Total number of parameters: {num_params}")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = None
@@ -139,6 +141,7 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
     results_dir = op.join(project_dir, "results")
     output_dir = op.join(results_dir, "pubmed")
     os.makedirs(output_dir, exist_ok=True)
+    verbose = 1
 
     device = _get_device() if device is None else device
     print(f"Using device: {device}")
@@ -209,7 +212,8 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
             if val_fold >= val_folds_to_run:
                 break
 
-            print(f"Test fold: {test_fold}, Val fold: {val_fold}")
+            if verbose > 0:
+                print(f"Test fold: {test_fold}, Val fold: {val_fold}")
 
             train_loader = _get_data_loader(
                 img_emb[train_val_index][train_index],
@@ -225,7 +229,8 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
                 shuffle=False,
             )
 
-            print("Initializing CLIP model")
+            if verbose > 0:
+                print("Initializing CLIP model")
             clip_model, optimizer, criterion, scheduler = _initialize_clip_model(
                 text_emb_dim,
                 output_dim,
@@ -233,9 +238,11 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
                 learning_rate,
                 weight_decay,
                 device,
+                verbose=verbose,
             )
 
-            print("Training CLIP model")
+            if verbose > 0:
+                print("Training CLIP model")
             clip_model, train_losses, val_losses = train_clip_model(
                 clip_model,
                 criterion,
@@ -246,6 +253,7 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
                 current_model_fn,
                 last_model_fn,
                 device,
+                verbose=verbose,
                 plot_verbose=plot_verbose,
             )
             final_num_epochs = len(train_losses)
@@ -255,7 +263,8 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
             losses["train"].extend(train_losses)
             losses["val"].extend(val_losses)
 
-            print("Evaluating CLIP model")
+            if verbose > 0:
+                print("Evaluating CLIP model")
             (train_recalls, val_recalls, test_recalls), metric_names = _evaluate_clip_model(
                 clip_model,
                 train_loader,
@@ -275,14 +284,16 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
 
             current_recall = test_recalls[-1]  # Get the recall from mix_match
             if current_recall > best_recall:
-                print(
-                    f"Saving best model with recall: {current_recall}; test fold: {test_fold}, "
-                    f"val fold: {val_fold}"
-                )
+                if verbose > 0:
+                    print(
+                        f"Saving best model with recall: {current_recall}; "
+                        f"test fold: {test_fold}, val fold: {val_fold}"
+                    )
                 best_recall = current_recall
                 torch.save(clip_model.state_dict(), best_model_fn)
 
-    print(f"Best recall: {best_recall}")
+    if verbose > 0:
+        print(f"Best recall: {best_recall}")
 
     # Save metrics
     metrics_fn = op.join(

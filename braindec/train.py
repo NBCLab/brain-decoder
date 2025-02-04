@@ -6,20 +6,30 @@ from tqdm import tqdm
 from braindec.plot import plot_training
 
 
-def train(model, train_loader, criterion, optimizer, device, scheduler=None, clip_grad_norm=None):
+def train(
+    model,
+    train_loader,
+    criterion,
+    optimizer,
+    device,
+    scheduler=None,
+    clip_grad_norm=None,
+    verbose=1,
+):
     model.train()
+    tqdm_off = verbose <= 2
 
     train_loss = 0
-    for image_embeddings, text_embeddings in tqdm(train_loader, desc="Training"):
+    for image_emb, text_emb in tqdm(train_loader, desc="Training", disable=tqdm_off):
         optimizer.zero_grad()  # Reset all gradients
 
-        image_embeddings = image_embeddings.to(device)
-        text_embeddings = text_embeddings.to(device)
+        image_emb = image_emb.to(device)
+        text_emb = text_emb.to(device)
 
-        image_embed, text_embed = model(image_embeddings, text_embeddings)  # Forward pass
+        image_emb, text_emb = model(image_emb, text_emb)  # Forward pass
 
         # Calculate the loss
-        loss = criterion(image_embed, text_embed, model.logit_scale, model.logit_bias)
+        loss = criterion(image_emb, text_emb, model.logit_scale, model.logit_bias)
         train_loss += loss.item()
 
         loss.backward()  # Backpropagate the loss
@@ -37,19 +47,20 @@ def train(model, train_loader, criterion, optimizer, device, scheduler=None, cli
     return model, train_loss / len(train_loader)
 
 
-def validate(model, val_loader, criterion, device):
+def validate(model, val_loader, criterion, device, verbose=1):
     model.eval()
+    tqdm_off = verbose <= 2
 
     val_loss = 0
     with torch.no_grad():
-        for image_embeddings, text_embeddings in tqdm(val_loader, desc="Validating"):
-            image_embeddings = image_embeddings.to(device)
-            text_embeddings = text_embeddings.to(device)
+        for image_emb, text_emb in tqdm(val_loader, desc="Validating", disable=tqdm_off):
+            image_emb = image_emb.to(device)
+            text_emb = text_emb.to(device)
 
-            image_embed, text_embed = model(image_embeddings, text_embeddings)  # Forward pass
+            image_emb, text_emb = model(image_emb, text_emb)  # Forward pass
 
             # Calculate the loss
-            loss = criterion(image_embed, text_embed, model.logit_scale, model.logit_bias)
+            loss = criterion(image_emb, text_emb, model.logit_scale, model.logit_bias)
 
             val_loss += loss.item()
 
@@ -87,6 +98,7 @@ def train_clip_model(
     best_model_fn,
     last_model_fn,
     device,
+    verbose=1,
     plot_verbose=False,
 ):
     # Training loop
@@ -96,15 +108,23 @@ def train_clip_model(
     train_losses = []
     val_losses = []
     for epoch in range(num_epochs):
-        model, train_loss = train(model, train_loader, criterion, optimizer, device)
-        model, val_loss = validate(model, val_loader, criterion, device)
+        model, train_loss = train(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            verbose=verbose,
+        )
+        model, val_loss = validate(model, val_loader, criterion, device, verbose=verbose)
 
         train_losses.append(train_loss)
         val_losses.append(val_loss)
-        print(
-            f"Epoch {epoch + 1}/{num_epochs}, "
-            f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, "
-        )
+        if verbose > 1:
+            print(
+                f"Epoch {epoch + 1}/{num_epochs}, "
+                f"Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, "
+            )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -113,7 +133,8 @@ def train_clip_model(
         else:
             counter += 1
             if counter >= patience:
-                print(f"Early stopping triggered after {epoch + 1} epochs")
+                if verbose > 1:
+                    print(f"Early stopping triggered after {epoch + 1} epochs")
                 break
 
     torch.save(model.state_dict(), last_model_fn)
