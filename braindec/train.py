@@ -73,14 +73,14 @@ def predict(model, data_loader, device):
     with torch.no_grad():
         all_image_embeddings = []
         all_text_embeddings = []
-        for image_embeddings, text_embeddings in data_loader:
-            image_embeddings = image_embeddings.to(device)
-            text_embeddings = text_embeddings.to(device)
+        for image_emb, text_emb in data_loader:
+            image_emb = image_emb.to(device)
+            text_emb = text_emb.to(device)
 
-            image_embed, text_embed = model(image_embeddings, text_embeddings)  # Forward pass
+            image_emb, text_emb = model(image_emb, text_emb)  # Forward pass
 
-            all_image_embeddings.append(image_embed.cpu())
-            all_text_embeddings.append(text_embed.cpu())
+            all_image_embeddings.append(image_emb.cpu())
+            all_text_embeddings.append(text_emb.cpu())
 
     all_image_embeddings = torch.cat(all_image_embeddings, dim=0)
     all_text_embeddings = torch.cat(all_text_embeddings, dim=0)
