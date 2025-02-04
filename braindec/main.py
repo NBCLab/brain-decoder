@@ -1,10 +1,11 @@
+import argparse
 import os
 import os.path as op
-from collections import defaultdict
 from functools import partial
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader, TensorDataset
@@ -15,6 +16,37 @@ from braindec.model import CLIP, count_parameters
 from braindec.plot import plot_matrix
 from braindec.train import predict, train_clip_model
 from braindec.utils import _get_device
+
+
+def _get_parser():
+    parser = argparse.ArgumentParser(description="Run gradient-decoding workflow")
+    parser.add_argument(
+        "--project_dir",
+        dest="project_dir",
+        required=True,
+        help="Path to project directory",
+    )
+    parser.add_argument(
+        "--section",
+        dest="section",
+        default="abstract",
+        help="Section to extract text from (default: abstract). Possible values: abstract, body.",
+    )
+    parser.add_argument(
+        "--model_id",
+        dest="model_id",
+        default="mistralai/Mistral-7B-v0.1",
+        help="Model ID for text embedding (default: mistralai/Mistral-7B-v0.1). Possible values: "
+        "mistralai/Mistral-7B-v0.1, meta-llama/Llama-2-7b-chat-hf, BrainGPT/BrainGPT-7B-v0.1, "
+        "BrainGPT/BrainGPT-7B-v0.2.",
+    )
+    parser.add_argument(
+        "--device",
+        dest="device",
+        default=None,
+        help="Device to use for computation (default: None). Possible values: cpu, mps, cuda.",
+    )
+    return parser
 
 
 def _initialize_clip_model(
@@ -47,9 +79,7 @@ def _initialize_clip_model(
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = None
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, len(train_loader)*num_epochs)
-    # scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
-    # summary(model, (1, 28, 28))
+
     return model, optimizer, criterion, scheduler
 
 
@@ -63,17 +93,13 @@ def _evaluate_clip_model(
     device,
     plot_verbose=False,
 ):
-    metrics = {
-        "train": defaultdict(list),
-        "validation": defaultdict(list),
-        "test": defaultdict(list),
-    }
     recall_fn = partial(recall_n, thresh=0.95, reduce_mean=True)
 
     # Predict on test set and evaluate
+    metrics = []
     for loader_name, loader, weights_path in [
         ("train", train_loader, last_model_fn),
-        ("validation", val_loader, best_model_fn),
+        ("val", val_loader, best_model_fn),
         ("test", test_loader, best_model_fn),
     ]:
         model.load_state_dict(torch.load(weights_path))
@@ -92,18 +118,13 @@ def _evaluate_clip_model(
             plt.tight_layout()
             plt.show()
 
-        random_perf = 10 / len(similarity)
-
         nq_perf = recall_fn(similarity, np.eye(len(similarity)), n_first=10)
         nq_perf_100 = recall_fn(similarity, np.eye(len(similarity)), n_first=100)
-        nq_perf_all = recall_fn(similarity, np.eye(len(similarity)), n_first=len(similarity))
+        nq_perf_mixmatch = 100 * mix_match(similarity)
 
-        metrics[loader_name]["recall@10"].append(nq_perf)
-        metrics[loader_name]["recall@100"].append(nq_perf_100)
-        metrics[loader_name]["recall@all"].append(nq_perf_all)
-        metrics[loader_name]["mix_match"].append(100 * mix_match(similarity))
+        metrics.append([nq_perf, nq_perf_100, nq_perf_mixmatch])
 
-    return metrics
+    return metrics, ["recall@10", "recall@100", "recal@mixmatch"]
 
 
 def _get_data_loader(emb_x, emb_y, batch_size, shuffle=False):
@@ -112,30 +133,30 @@ def _get_data_loader(emb_x, emb_y, batch_size, shuffle=False):
 
 
 # Main training loop
-def main():
+def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", device=None):
     project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
     data_dir = op.join(project_dir, "data")
     results_dir = op.join(project_dir, "results")
-    output_dir = op.join(results_dir, "neurostore")
+    output_dir = op.join(results_dir, "pubmed")
     os.makedirs(output_dir, exist_ok=True)
-    content = "abstract"
-    model_id = "BrainGPT/BrainGPT-7B-v0.2"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
-    model_name = model_id.split("/")[-1]  # Embedding model name
 
-    best_model_fn = op.join(output_dir, f"best_clip-model_{content}_standardized_{model_name}.pth")
-    last_model_fn = op.join(output_dir, f"last_clip-model_{content}_standardized_{model_name}.pth")
-
-    device = _get_device()
+    device = _get_device() if device is None else device
     print(f"Using device: {device}")
 
     # Load embeddings
-    img_emb = np.load(op.join(data_dir, f"image_embedding_{content}_standardized.npy"))
-    text_emb = np.load(op.join(data_dir, f"text_embedding_{content}_{model_name}.npy"))
+    model_name = model_id.split("/")[-1]  # Embedding model name
+    img_emb = np.load(op.join(data_dir, "image_coord-MKDA_embedding-DiFuMo.npy"))
+    text_emb = np.load(op.join(data_dir, f"text_section-{section}_embedding-{model_name}.npy"))
+
+    model_fn = f"model-clip_section-{section}_embedding-{model_name}"
+    best_model_fn = op.join(output_dir, f"{model_fn}_best.pth")
+    current_model_fn = op.join(output_dir, f"{model_fn}_current.pth")
+    last_model_fn = op.join(output_dir, f"{model_fn}_last.pth")
 
     assert text_emb.shape[0] == img_emb.shape[0]
 
     # Hyperparameters
-    batch_size = 128
+    batch_size = 128  # 128, 256, 512, 1024
     num_epochs = 50
     learning_rate = 1e-4
     weight_decay = 0.1
@@ -147,13 +168,30 @@ def main():
     sample_size = text_emb.shape[0]
     text_emb_dim = text_emb.shape[1]
     output_dim = img_emb.shape[1]  # number of region in difumo
-    test_folds_to_run = 1
-    val_folds_to_run = 1
-    plot_verbose = True
+    test_folds_to_run = np.inf  # np.inf
+    val_folds_to_run = np.inf  # np.inf
+    plot_verbose = False
+
+    metrics = {
+        "test_fold": [],
+        "val_fold": [],
+        "sample": [],
+        "train": [],
+        "val": [],
+        "test": [],
+    }
+    losses = {
+        "test_fold": [],
+        "val_fold": [],
+        "epoch": [],
+        "train": [],
+        "val": [],
+    }
 
     # Split data into train, validation, and test sets
     test_k_fold = KFold(n_splits=sample_size // test_size)
     train_test_split = test_k_fold.split(text_emb)
+    best_recall = 0
     for test_fold, (train_val_index, test_index) in enumerate(train_test_split):
         if test_fold >= test_folds_to_run:
             break
@@ -170,6 +208,8 @@ def main():
         for val_fold, (train_index, val_index) in enumerate(train_val_split):
             if val_fold >= val_folds_to_run:
                 break
+
+            print(f"Test fold: {test_fold}, Val fold: {val_fold}")
 
             train_loader = _get_data_loader(
                 img_emb[train_val_index][train_index],
@@ -196,40 +236,74 @@ def main():
             )
 
             print("Training CLIP model")
-            clip_model, _, _ = train_clip_model(
+            clip_model, train_losses, val_losses = train_clip_model(
                 clip_model,
                 criterion,
                 optimizer,
                 num_epochs,
                 train_loader,
                 val_loader,
-                best_model_fn,
+                current_model_fn,
                 last_model_fn,
                 device,
                 plot_verbose=plot_verbose,
             )
+            final_num_epochs = len(train_losses)
+            losses["test_fold"].extend([test_fold] * final_num_epochs)
+            losses["val_fold"].extend([val_fold] * final_num_epochs)
+            losses["epoch"].extend(list(range(final_num_epochs)))
+            losses["train"].extend(train_losses)
+            losses["val"].extend(val_losses)
 
             print("Evaluating CLIP model")
-            metrics = _evaluate_clip_model(
+            (train_recalls, val_recalls, test_recalls), metric_names = _evaluate_clip_model(
                 clip_model,
                 train_loader,
                 val_loader,
                 test_loader,
-                best_model_fn,
+                current_model_fn,
                 last_model_fn,
                 device,
                 plot_verbose=plot_verbose,
             )
+            metrics["test_fold"].extend([test_fold] * len(metric_names))
+            metrics["val_fold"].extend([val_fold] * len(metric_names))
+            metrics["sample"].extend(metric_names)
+            metrics["train"].extend(train_recalls)
+            metrics["val"].extend(val_recalls)
+            metrics["test"].extend(test_recalls)
 
-    print(f"Metrics after {val_fold} folds")
-    for loader_name in ["train", "validation", "test"]:
-        print("=" * 10, loader_name, "=" * 10)
-        for metric_name in ["recall@10", "recall@100", "mix_match"]:
-            print(
-                f"{metric_name}: {np.mean(metrics[loader_name][metric_name]):.3f}"
-                f" +- {np.std(metrics[loader_name][metric_name]):.3f}"
-            )
+            current_recall = test_recalls[-1]  # Get the recall from mix_match
+            if current_recall > best_recall:
+                print(
+                    f"Saving best model with recall: {current_recall}; test fold: {test_fold}, "
+                    f"val fold: {val_fold}"
+                )
+                best_recall = current_recall
+                torch.save(clip_model.state_dict(), best_model_fn)
+
+    print(f"Best recall: {best_recall}")
+
+    # Save metrics
+    metrics_fn = op.join(
+        output_dir,
+        f"model-clip_section-{section}_embedding-{model_name}_metrics.csv",
+    )
+    losses_fn = op.join(
+        output_dir,
+        f"model-clip_section-{section}_embedding-{model_name}_losses.csv",
+    )
+    metrics_df = pd.DataFrame(metrics)
+    metrics_df.to_csv(metrics_fn, index=False)
+    losses_df = pd.DataFrame(losses)
+    losses_df.to_csv(losses_fn, index=False)
+
+
+def _main(argv=None):
+    option = _get_parser().parse_args(argv)
+    kwargs = vars(option)
+    main(**kwargs)
 
 
 if __name__ == "__main__":
-    main()
+    _main()
