@@ -61,7 +61,9 @@ def image_to_labels(
     # Pick the top topk most similar labels for the image
     image_features /= image_features.norm(dim=-1, keepdim=True)
     text_features /= text_features.norm(dim=-1, keepdim=True)
-    similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+    similarity = image_features @ text_features.T
+    # similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)  # Look at the values
+    # Keep the similarity instead
     values, indices = similarity[0].topk(topk)
 
     probability = values.cpu().detach().numpy()
