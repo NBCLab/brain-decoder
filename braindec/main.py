@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import os.path as op
 from functools import partial
@@ -153,8 +154,10 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
 
     model_fn = f"model-clip_section-{section}_embedding-{model_name}"
     best_model_fn = op.join(output_dir, f"{model_fn}_best.pth")
+    best_model_index_fn = op.join(output_dir, f"{model_fn}_best_indices.json")
     current_model_fn = op.join(output_dir, f"{model_fn}_current.pth")
     last_model_fn = op.join(output_dir, f"{model_fn}_last.pth")
+    best_model_index_dict = {"train": [], "val": [], "test": []}
 
     assert text_emb.shape[0] == img_emb.shape[0]
 
@@ -283,6 +286,8 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
             metrics["test"].extend(test_recalls)
 
             current_recall = test_recalls[-1]  # Get the recall from mix_match
+            if verbose > 0:
+                print(f"\tCurrent recall: {current_recall}, Best recall: {best_recall}")
             if current_recall > best_recall:
                 if verbose > 0:
                     print(
@@ -291,6 +296,13 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
                     )
                 best_recall = current_recall
                 torch.save(clip_model.state_dict(), best_model_fn)
+
+                # Save train, val and test indices
+                best_model_index_dict["train"] = train_val_index[train_index]
+                best_model_index_dict["val"] = train_val_index[val_index]
+                best_model_index_dict["test"] = test_index
+                with open(best_model_index_fn, "w") as f:
+                    json.dump(best_model_index_dict, f)
 
     if verbose > 0:
         print(f"Best recall: {best_recall}")
