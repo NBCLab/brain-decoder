@@ -145,10 +145,10 @@ def _get_cogatlas_data(url):
 
     output = {}
     for task in tasks:
-        if "name" in task and "definition_text" in task:
+        if ("name" in task) and (task["name"] != "") and ("definition_text" in task):
             output[task["name"]] = task["definition_text"]
-        elif "name" in task and "definition_text" not in task:
-            output[task["name"]] = ""
+        # elif "name" in task and "definition_text" not in task:
+        #    output[task["name"]] = ""
         else:
             print(f"Task {task} does not have a name or definition_text")
 
