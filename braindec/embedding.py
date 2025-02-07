@@ -1,6 +1,5 @@
 """Code to determine embeddings for text and images."""
 
-import textwrap
 from typing import List, Union
 
 import numpy as np
@@ -11,8 +10,8 @@ from nilearn.maskers import MultiNiftiMapsMasker
 from nimare.dataset import Dataset
 from nimare.meta.kernel import MKDAKernel
 from peft import PeftConfig, PeftModel
+from scipy.special import expit
 from sklearn.feature_extraction.text import TfidfTransformer
-from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 
@@ -32,6 +31,7 @@ class TextEmbedding:
         self,
         model_name: str = "BrainGPT/BrainGPT-7B-v0.2",
         max_length: int = None,
+        batch_size: int = 1,
         device: str = None,
     ):
         """
@@ -44,10 +44,12 @@ class TextEmbedding:
                 - "BrainGPT/BrainGPT-7B-v0.1"
                 - "BrainGPT/BrainGPT-7B-v0.2"
             max_length: Maximum token length for each chunk
+            batch_size: Batch size for processing (total number of papers to process at once)
             device: Device to use for computation. If None, the device is automatically selected.
         """
         self.device = _get_device() if device is None else device
         self.model_name = model_name
+        self.batch_size = batch_size
 
         if model_name == "mistralai/Mistral-7B-v0.1":
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -78,7 +80,63 @@ class TextEmbedding:
         else:
             raise ValueError(f"Model name {model_name} not supported.")
 
-    def chunk_text(self, text: str) -> List[str]:
+        self.model.eval()
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+
+    def clear_device_cache(self):
+        """Clear memory cache for the current device type."""
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        elif self.device == "mps":
+            # MPS (Apple Silicon) garbage collection
+            torch.mps.empty_cache()
+
+    def mean_pooling(self, token_embeddings, attention_mask):
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        sentence_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(
+            input_mask_expanded.sum(1), min=1e-9
+        )
+
+        return sentence_embeddings
+
+    def generate_embedding(self, token_embeddings, attention_mask) -> np.ndarray:
+        """
+        Generate embedding from token embeddings.
+
+        Args:
+            token_embeddings: Token embeddings
+            attention_mask: Attention mask
+
+        Returns:
+            Numpy array containing the average embedding
+        """
+        # Perform pooling
+        embeddings = self.mean_pooling(token_embeddings, attention_mask)
+
+        # Normalize embeddings
+        embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+
+        return embeddings.cpu().numpy()
+
+    def get_token_embeddings(self, tokenized: dict) -> np.ndarray:
+        """
+        Get token embeddings for a single text chunk.
+
+        Args:
+            tokenized: Tokenized dictionary containing input_ids and attention_mask
+
+        Returns:
+            Numpy array containing the embedding
+        """
+        # Send to device
+        tokenized = {k: v.to(self.device) for k, v in tokenized.items()}
+
+        # Generate embeddings
+        with torch.no_grad():
+            outputs = self.model(**tokenized, output_hidden_states=True)
+            return outputs.hidden_states[-1]
+
+    def chunk_text(self, texts: str) -> List[str]:
         """
         Split text into chunks that respect the model's token limit.
 
@@ -86,81 +144,53 @@ class TextEmbedding:
             text: Input text to be chunked
 
         Returns:
-            List of text chunks
+            List of text chunks (tokenized dictionaries)
         """
-        # Use approximate characters per token ratio to estimate chunk size
-        chars_per_token = 4
-        chars_per_chunk = self.max_length * chars_per_token
+        tokenized = self.tokenizer(texts, return_tensors="pt", padding=True)
+        input_ids = tokenized["input_ids"]
+        attention_mask = tokenized["attention_mask"]
 
-        # Split into chunks while trying to respect sentence boundaries
-        chunks = textwrap.wrap(
-            text,
-            width=chars_per_chunk,
-            break_long_words=False,
-            break_on_hyphens=False,
-        )
+        # Split into chunks of dictionaries
+        chunks = []
+        for i in range(0, input_ids.size(1), self.max_length):
+            chunks.append(
+                {
+                    "input_ids": input_ids[:, i : i + self.max_length],
+                    "attention_mask": attention_mask[:, i : i + self.max_length],
+                }
+            )
 
         return chunks
 
-    def generate_embedding(self, text: str) -> np.ndarray:
+    def process_text(self, text: List[str]) -> np.ndarray:
         """
-        Generate embedding for a single chunk of text.
+        Process text by chunking and averaging token embeddings.
 
         Args:
-            text: Input text chunk
+            text: Batch of texts
 
         Returns:
-            Numpy array containing the embedding
-        """
-        # Tokenize and prepare input
-        inputs = self.tokenizer(
-            text,
-            return_tensors="pt",
-            max_length=self.max_length,
-            truncation=True,
-        )
-        # padding=True
-
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-        # Generate embeddings
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-
-        if self.model_name.startswith("BrainGPT") or self.model_name.startswith("meta-llama"):
-            # Use the mean of the last hidden state as the embedding
-            embeddings = outputs.logits.mean(dim=1)
-        else:
-            # Use the mean of the last hidden state as the embedding
-            embeddings = outputs.last_hidden_state.mean(dim=1)
-
-        return embeddings.cpu().numpy()[0]
-
-    def process_large_text(self, text: str) -> np.ndarray:
-        """
-        Process large text by chunking and averaging embeddings.
-
-        Args:
-            text: Large input text
-
-        Returns:
-            Averaged embedding vector for the entire text
+            Averaged embedding vector for the entire batch of texts
         """
         # Split text into chunks
         chunks = self.chunk_text(text)
 
         # Generate embeddings for each chunk
-        chunk_embeddings = []
+        token_embeddings = []
+        attention_masks = []
         for chunk in tqdm(chunks, desc="Processing chunks", leave=False):
-            embedding = self.generate_embedding(chunk)
-            chunk_embeddings.append(embedding)
+            token_embeddings.append(self.get_token_embeddings(chunk))
+            attention_masks.append(chunk["attention_mask"].to(self.device))
 
-        # Average the embeddings
-        average_embedding = np.mean(chunk_embeddings, axis=0)
+        # Delete chunks to free up memory
+        del chunks
 
-        return average_embedding
+        token_embeddings = torch.cat(token_embeddings, dim=1)
+        attention_masks = torch.cat(attention_masks, dim=1)
 
-    def __call__(self, text: Union[str, List[str]]) -> np.ndarray:
+        return self.generate_embedding(token_embeddings, attention_masks)
+
+    def __call__(self, texts: Union[str, List[str]]) -> np.ndarray:
         """
         Generate embeddings for input text(s).
 
@@ -170,15 +200,15 @@ class TextEmbedding:
         Returns:
             Numpy array of embeddings
         """
-        if isinstance(text, str):
-            return self.process_large_text(text)
+        if isinstance(texts, str):
+            return self.process_text([texts])
         else:
-            # Process multiple texts with progress bar
+            # Process multiple texts in batches
             embeddings = []
-            for t in tqdm(text, desc="Processing texts"):
-                embeddings.append(self.process_large_text(t))
+            for t in tqdm(range(0, len(texts), self.batch_size), desc="Processing batches"):
+                embeddings.append(self.process_text(texts[t : t + self.batch_size]))
 
-            return np.stack(embeddings)
+            return np.concatenate(embeddings)
 
 
 class ImageEmbedding:
@@ -241,14 +271,22 @@ class ImageEmbedding:
         return self.generate_embedding(images)
 
 
-def get_word_relevance(document_embeddings, word_embeddings, threshold=0.5):
-    """
-    Calculate overall word importance combining multiple metrics
+def normalize_embeddings(embeddings):
+    # Calculate L2 norm along last dimension
+    # keepdims=True maintains the dimension for broadcasting
+    norms = np.linalg.norm(embeddings, axis=-1, keepdims=True)
 
-    Args:
-        word_embeddings: dict of word embeddings
-    """
+    # Divide by norm to normalize
+    # Added small epsilon to prevent division by zero
+    return embeddings / (norms + 1e-8)
+
+
+def get_word_relevance(document_embeddings, word_embeddings, threshold=0.5):
+    document_embeddings = normalize_embeddings(document_embeddings)
+    word_embeddings = normalize_embeddings(word_embeddings)
+
     semantic_tf = document_embeddings @ word_embeddings.T
+    semantic_tf = expit(semantic_tf)
     semantic_count = np.sum(semantic_tf > threshold, axis=0)
 
     semantic_idf = TfidfTransformer().fit_transform(semantic_count)
