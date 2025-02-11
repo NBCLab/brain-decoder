@@ -11,7 +11,6 @@ def train(
     train_loader,
     criterion,
     optimizer,
-    device,
     scheduler=None,
     clip_grad_norm=None,
     verbose=1,
@@ -23,13 +22,14 @@ def train(
     for image_emb, text_emb in tqdm(train_loader, desc="Training", disable=tqdm_off):
         optimizer.zero_grad()  # Reset all gradients
 
-        image_emb = image_emb.to(device)
-        text_emb = text_emb.to(device)
+        image_emb = image_emb.to(model.device)
+        text_emb = text_emb.to(model.device)
 
         image_emb, text_emb = model(image_emb, text_emb)  # Forward pass
 
         # Calculate the loss
-        loss = criterion(image_emb, text_emb, model.logit_scale, model.logit_bias)
+        # logit_scale = self.logit_scale.exp()
+        loss = criterion(image_emb, text_emb, model.logit_scale)
         train_loss += loss.item()
 
         loss.backward()  # Backpropagate the loss
@@ -47,35 +47,36 @@ def train(
     return model, train_loss / len(train_loader)
 
 
-def validate(model, val_loader, criterion, device, verbose=1):
+def validate(model, val_loader, criterion, verbose=1):
     model.eval()
     tqdm_off = verbose <= 2
 
     val_loss = 0
     with torch.no_grad():
         for image_emb, text_emb in tqdm(val_loader, desc="Validating", disable=tqdm_off):
-            image_emb = image_emb.to(device)
-            text_emb = text_emb.to(device)
+            image_emb = image_emb.to(model.device)
+            text_emb = text_emb.to(model.device)
 
             image_emb, text_emb = model(image_emb, text_emb)  # Forward pass
 
             # Calculate the loss
-            loss = criterion(image_emb, text_emb, model.logit_scale, model.logit_bias)
+            # logit_scale = self.logit_scale.exp()
+            loss = criterion(image_emb, text_emb, model.logit_scale)
 
             val_loss += loss.item()
 
     return model, val_loss / len(val_loader)
 
 
-def predict(model, data_loader, device):
+def predict(model, data_loader):
     model.eval()
 
     with torch.no_grad():
         all_image_embeddings = []
         all_text_embeddings = []
         for image_emb, text_emb in data_loader:
-            image_emb = image_emb.to(device)
-            text_emb = text_emb.to(device)
+            image_emb = image_emb.to(model.device)
+            text_emb = text_emb.to(model.device)
 
             image_emb, text_emb = model(image_emb, text_emb)  # Forward pass
 
@@ -97,7 +98,6 @@ def train_clip_model(
     val_loader,
     best_model_fn,
     last_model_fn,
-    device,
     verbose=1,
     plot_verbose=False,
 ):
@@ -113,10 +113,9 @@ def train_clip_model(
             train_loader,
             criterion,
             optimizer,
-            device,
             verbose=verbose,
         )
-        model, val_loss = validate(model, val_loader, criterion, device, verbose=verbose)
+        model, val_loss = validate(model, val_loader, criterion, verbose=verbose)
 
         train_losses.append(train_loss)
         val_losses.append(val_loss)
@@ -143,4 +142,4 @@ def train_clip_model(
     if plot_verbose:
         plot_training(train_losses, val_losses)
 
-    return model, train_losses, val_losses
+    return train_losses, val_losses

@@ -268,11 +268,11 @@ class CLIP(nn.Module):
 
     def forward(self, image, text):
         image_embeddings = self.encode_image(image)
-
         text_embeddings = self.encode_text(text)
 
-        image_embeddings = image_embeddings / image_embeddings.norm(dim=-1, keepdim=True)
-        text_embeddings = text_embeddings / text_embeddings.norm(dim=-1, keepdim=True)
+        # normalized features
+        image_embeddings = image_embeddings / image_embeddings.norm(dim=1, keepdim=True)
+        text_embeddings = text_embeddings / text_embeddings.norm(dim=1, keepdim=True)
 
         return image_embeddings, text_embeddings
 
@@ -280,7 +280,7 @@ class CLIP(nn.Module):
 def build_model(model_path, device):
     """Build model from a saved model file."""
     try:
-        state_dict = torch.load(model_path, map_location=device)
+        state_dict = torch.load(model_path, weights_only=True, map_location=device)
     except FileNotFoundError:
         print("Model file not found")
     except Exception as e:
@@ -292,5 +292,6 @@ def build_model(model_path, device):
 
     model = CLIP(input_dim, output_dim=output_dim).to(device)
     model.load_state_dict(state_dict)
+    model.device = device
 
     return model.eval()

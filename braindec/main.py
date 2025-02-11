@@ -1,6 +1,7 @@
 import argparse
 import os
 import os.path as op
+import shutil
 from functools import partial
 
 import matplotlib.pyplot as plt
@@ -12,7 +13,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from braindec.loss import ClipLoss
 from braindec.metrics import mix_match, recall_n
-from braindec.model import CLIP, count_parameters
+from braindec.model import CLIP, build_model, count_parameters
 from braindec.plot import plot_matrix
 from braindec.train import predict, train_clip_model
 from braindec.utils import _get_device
@@ -55,6 +56,7 @@ def _initialize_clip_model(
     dropout,
     learning_rate,
     weight_decay,
+    temperature,
     device,
     verbose=1,
 ):
@@ -62,8 +64,8 @@ def _initialize_clip_model(
     is_clip_loss = criterion.__class__ == ClipLoss
 
     loss_specific_kwargs = {
-        "logit_scale": 10 if is_clip_loss else np.log(10),
-        "logit_bias": None if is_clip_loss else -10,
+        "logit_scale": temperature if is_clip_loss else np.log(temperature),
+        "logit_bias": None if is_clip_loss else -temperature,
     }
 
     # Initialize model, loss function, and optimizer
@@ -73,6 +75,7 @@ def _initialize_clip_model(
         dropout=dropout,
         **loss_specific_kwargs,
     ).to(device)
+    model.device = device
 
     # Get the number of parameters
     num_params = count_parameters(model)
@@ -86,7 +89,6 @@ def _initialize_clip_model(
 
 
 def _evaluate_clip_model(
-    model,
     train_loader,
     val_loader,
     test_loader,
@@ -104,10 +106,13 @@ def _evaluate_clip_model(
         ("val", val_loader, best_model_fn),
         ("test", test_loader, best_model_fn),
     ]:
-        model.load_state_dict(torch.load(weights_path))
+        # model.load_state_dict(torch.load(weights_path, weights_only=True))
+        model = build_model(weights_path, device=device)
+        logit_scale = model.logit_scale.item()
 
-        image_embeddings, text_embeddings = predict(model, loader, device=device)
-        similarity = (image_embeddings @ text_embeddings.T).softmax(dim=1).numpy()
+        image_embeddings, text_embeddings = predict(model, loader)
+
+        similarity = (logit_scale * image_embeddings @ text_embeddings.T).softmax(dim=-1).numpy()
         if plot_verbose:
             # Plot similarity matrices that should be diagonal
             fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 5))
@@ -126,7 +131,7 @@ def _evaluate_clip_model(
 
         metrics.append([nq_perf, nq_perf_100, nq_perf_mixmatch])
 
-    return metrics, ["recall@10", "recall@100", "recal@mixmatch"]
+    return metrics, ["recall@10", "recall@100", "mix&match"]
 
 
 def _get_data_loader(emb_x, emb_y, batch_size, shuffle=False):
@@ -141,28 +146,33 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
     results_dir = op.join(project_dir, "results")
     output_dir = op.join(results_dir, "pubmed")
     os.makedirs(output_dir, exist_ok=True)
-    verbose = 1
+    verbose = 2
 
     device = _get_device() if device is None else device
     print(f"Using device: {device}")
 
     # Load embeddings
     model_name = model_id.split("/")[-1]  # Embedding model name
-    img_emb = np.load(op.join(data_dir, "image_coord-MKDA_embedding-DiFuMo.npy"))
-    text_emb = np.load(op.join(data_dir, f"text_section-{section}_embedding-{model_name}.npy"))
+    img_emb = np.load(
+        op.join(data_dir, "image", "image-normalized_coord-MKDA_embedding-DiFuMo.npy")
+    )
+    text_emb = np.load(
+        op.join(data_dir, "text", f"text-normalized_section-{section}_embedding-{model_name}.npy")
+    )
 
     model_fn = f"model-clip_section-{section}_embedding-{model_name}"
     best_model_fn = op.join(output_dir, f"{model_fn}_best.pth")
     best_model_index_fn = op.join(output_dir, f"{model_fn}_best-indices.npz")
-    current_model_fn = op.join(output_dir, f"{model_fn}_current.pth")
+    current_best_model_fn = op.join(output_dir, f"{model_fn}_current.pth")
     last_model_fn = op.join(output_dir, f"{model_fn}_last.pth")
 
     assert text_emb.shape[0] == img_emb.shape[0]
 
-    # Hyperparameters
+    # Hyperparameters taken from the Neurocontext paper
     batch_size = 128  # 128, 256, 512, 1024
+    temperature = 10  # inverse temperature
     num_epochs = 50
-    learning_rate = 1e-4
+    learning_rate = 5e-4
     weight_decay = 0.1
     dropout = 0.5
 
@@ -238,22 +248,22 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
                 dropout,
                 learning_rate,
                 weight_decay,
+                temperature,
                 device,
                 verbose=verbose,
             )
 
             if verbose > 0:
                 print("Training CLIP model")
-            clip_model, train_losses, val_losses = train_clip_model(
+            train_losses, val_losses = train_clip_model(
                 clip_model,
                 criterion,
                 optimizer,
                 num_epochs,
                 train_loader,
                 val_loader,
-                current_model_fn,
+                current_best_model_fn,
                 last_model_fn,
-                device,
                 verbose=verbose,
                 plot_verbose=plot_verbose,
             )
@@ -267,11 +277,10 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
             if verbose > 0:
                 print("Evaluating CLIP model")
             (train_recalls, val_recalls, test_recalls), metric_names = _evaluate_clip_model(
-                clip_model,
                 train_loader,
                 val_loader,
                 test_loader,
-                current_model_fn,
+                current_best_model_fn,
                 last_model_fn,
                 device,
                 plot_verbose=plot_verbose,
@@ -283,7 +292,7 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
             metrics["val"].extend(val_recalls)
             metrics["test"].extend(test_recalls)
 
-            current_recall = test_recalls[-1]  # Get the recall from mix_match
+            current_recall = test_recalls[0]  # Get the recall@10
             if verbose > 0:
                 print(f"\tCurrent recall: {current_recall}, Best recall: {best_recall}")
             if current_recall > best_recall:
@@ -293,7 +302,9 @@ def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", 
                         f"test fold: {test_fold}, val fold: {val_fold}"
                     )
                 best_recall = current_recall
-                torch.save(clip_model.state_dict(), best_model_fn)
+
+                # Save current best model as the best model
+                shutil.copy(current_best_model_fn, best_model_fn)  # Overwrite best model
                 np.savez_compressed(
                     best_model_index_fn,
                     train=train_val_index[train_index],
