@@ -10,8 +10,6 @@ from nilearn.maskers import MultiNiftiMapsMasker
 from nimare.dataset import Dataset
 from nimare.meta.kernel import MKDAKernel
 from peft import PeftConfig, PeftModel
-from scipy.special import expit
-from sklearn.feature_extraction.text import TfidfTransformer
 from tqdm import tqdm
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 
@@ -110,11 +108,7 @@ class TextEmbedding:
         Returns:
             Numpy array containing the average embedding
         """
-        # Perform pooling
         embeddings = self.mean_pooling(token_embeddings, attention_mask)
-
-        # Normalize embeddings
-        embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
         return embeddings.cpu().numpy()
 
@@ -279,16 +273,3 @@ def normalize_embeddings(embeddings):
     # Divide by norm to normalize
     # Added small epsilon to prevent division by zero
     return embeddings / (norms + 1e-8)
-
-
-def get_word_relevance(document_embeddings, word_embeddings, threshold=0.5):
-    document_embeddings = normalize_embeddings(document_embeddings)
-    word_embeddings = normalize_embeddings(word_embeddings)
-
-    semantic_tf = document_embeddings @ word_embeddings.T
-    semantic_tf = expit(semantic_tf)
-    semantic_count = np.sum(semantic_tf > threshold, axis=0)
-
-    semantic_idf = TfidfTransformer().fit_transform(semantic_count)
-
-    return semantic_tf, semantic_count, semantic_tf * semantic_idf
