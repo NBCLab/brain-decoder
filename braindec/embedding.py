@@ -263,13 +263,3 @@ class ImageEmbedding:
         """
         # Accept nifti and path to image as input
         return self.generate_embedding(images)
-
-
-def normalize_embeddings(embeddings):
-    # Calculate L2 norm along last dimension
-    # keepdims=True maintains the dimension for broadcasting
-    norms = np.linalg.norm(embeddings, axis=-1, keepdims=True)
-
-    # Divide by norm to normalize
-    # Added small epsilon to prevent division by zero
-    return embeddings / (norms + 1e-8)
