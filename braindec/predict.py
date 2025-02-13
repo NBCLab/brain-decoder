@@ -33,6 +33,7 @@ def image_to_labels(
     model_path,
     vocabulary,
     vocabulary_emb,
+    prior_probability,
     topk=10,
     standardize=False,
     logit_scale=None,
@@ -54,6 +55,7 @@ def image_to_labels(
     image = load_img(image)
     image_input = preprocess_image(image, standardize=standardize, data_dir=data_dir).to(device)
     text_inputs = torch.from_numpy(vocabulary_emb).float().to(device)
+    prior_probability = torch.from_numpy(prior_probability).float().to(device)
 
     # Normalize the embeddings
     text_inputs = text_inputs / (text_inputs.norm(dim=-1, keepdim=True) + 1e-8)
@@ -71,12 +73,35 @@ def image_to_labels(
 
     # Pick the top topk most similar labels for the image
     # similarity = logit_scale * image_features @ text_features.T
-    similarity = (logit_scale * image_features @ text_features.T).softmax(dim=-1)
-    values, indices = similarity[0].topk(topk)
+    likelihood = (logit_scale * image_features @ text_features.T).softmax(dim=-1)
+    # Flatten the probability distribution, since image_features is a single image
+    likelihood = likelihood.flatten()  # P(A|T)
 
-    # probability = expit(values.cpu().detach().numpy())
-    # probability = softmax(values.cpu().detach().numpy())
-    probability = values.cpu().detach().numpy()
+    joint_probability = likelihood * prior_probability  # P(A|T) * P(A)
+    total_probability = joint_probability.sum()  # P(T)
+    posterior_probability = joint_probability / total_probability  # P(T|A) = P(A|T) * P(A) / P(T)
+
+    # Calculate the strength of the evidence using the Bayes factor
+    posterrior_odds = posterior_probability / (1 - posterior_probability)
+    prior_odds = prior_probability / (1 - prior_probability)
+    bayes_factor = posterrior_odds / prior_odds
+
+    # Get the top k predictions
+    values, indices = posterior_probability.topk(topk)
+    selectivity = values.cpu().detach().numpy()
     indices = indices.cpu().detach().numpy()
+    likelihood = likelihood.cpu().detach().numpy()
+    joint_probability = joint_probability.cpu().detach().numpy()
+    prior_probability = prior_probability.cpu().detach().numpy()
+    bayes_factor = bayes_factor.cpu().detach().numpy()
 
-    return pd.DataFrame({"label": np.array(vocabulary)[indices], "probability": probability})
+    return pd.DataFrame(
+        {
+            "label": np.array(vocabulary)[indices],
+            "likelihood": likelihood[indices],
+            "prior_prob": prior_probability[indices],
+            "joint_prob": joint_probability[indices],
+            "posterior_prob": selectivity,
+            "bayes_factor": bayes_factor[indices],
+        }
+    )
