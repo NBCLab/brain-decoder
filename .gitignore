@@ -2,6 +2,7 @@
 /data
 /results
 /jobs/log
+/figures
 
 # VS Code
 .vscode/
