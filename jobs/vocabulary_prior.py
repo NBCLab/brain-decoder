@@ -5,6 +5,8 @@ import os.path as op
 import nimare
 import numpy as np
 import pandas as pd
+from scipy.special import expit, softmax
+from utils import _read_vocabulary
 
 
 def _get_parser():
@@ -16,16 +18,6 @@ def _get_parser():
         help="Path to project directory",
     )
     return parser
-
-
-def _read_vocabulary(vocabulary_fn, vocabulary_emb_fn, vocabulary_prior_fn=None):
-    with open(vocabulary_fn, "r") as f:
-        vocabulary = [line.strip() for line in f]
-
-    if vocabulary_prior_fn is not None:
-        return vocabulary, np.load(vocabulary_emb_fn), np.load(vocabulary_prior_fn)
-    else:
-        return vocabulary, np.load(vocabulary_emb_fn)
 
 
 def count_top_n_appearances(similarity_matrix, n_top_docs=10):
@@ -53,17 +45,22 @@ def count_top_n_appearances(similarity_matrix, n_top_docs=10):
     return task_counts, top_n_indices
 
 
-def _get_prior_prob(doc_emb, emb, n_top_docs=10):
+def _get_prior_prob_old(doc_emb, emb, temperature=10, n_top_docs=10):
     emb = emb / (np.linalg.norm(emb, axis=1, keepdims=True) + 1e-8)
     doc_emb = doc_emb / (np.linalg.norm(doc_emb, axis=1, keepdims=True) + 1e-8)
 
     names_doc_similarity = emb @ doc_emb.T
+    # mean_similarity = np.mean(names_doc_similarity, axis=1)
+    prior = np.mean(softmax(names_doc_similarity * temperature, axis=0), axis=1)
+
+    # prior = softmax(mean_similarity)
     names_counts, top_n_indices = count_top_n_appearances(
         names_doc_similarity,
         n_top_docs=n_top_docs,
     )
 
-    return names_counts, top_n_indices, names_counts / doc_emb.shape[0]
+    # return names_counts, top_n_indices, names_counts / doc_emb.shape[0]
+    return prior, top_n_indices
 
 
 def main(project_dir):
@@ -90,15 +87,14 @@ def main(project_dir):
             emb_fn = op.join(voc_dir, f"{lb}.npy")
             names_fn = op.join(voc_dir, f"{lb}.txt")
             prior_fn = op.join(voc_dir, f"{lb}_section-{section}_prior.npy")
-            counts_fn = op.join(voc_dir, f"{lb}_section-{section}_counts.npy")
-            top_n_indices_fn = op.join(voc_dir, f"{lb}_section-{section}_top.npy")
+            top_fn = op.join(voc_dir, f"{lb}_section-{section}_top.npy")
             pmid_to_task_fn = op.join(voc_dir, f"{lb}_section-{section}_top.json")
 
             names, emb = _read_vocabulary(names_fn, emb_fn)
-            counts, topindx, prior_prob = _get_prior_prob(doc_emb, emb, n_top_docs=n_top_docs)
+
+            prior_prob, topindx = _get_prior_prob_old(doc_emb, emb, n_top_docs=n_top_docs)
             np.save(prior_fn, prior_prob)
-            np.save(counts_fn, counts)
-            np.save(top_n_indices_fn, topindx)
+            np.save(top_fn, topindx)
 
             names = np.array(names)
             df = pd.DataFrame({"name": names, "prior": prior_prob})
