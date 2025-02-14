@@ -13,7 +13,7 @@ from braindec.model import build_model
 from braindec.utils import _get_device, get_data_dir
 
 
-def preprocess_image(image, standardize=False, data_dir=None):
+def preprocess_image(image, standardize=False, data_dir=None, space="MNI152", density=None):
     """
     Preprocess the image.
 
@@ -22,7 +22,12 @@ def preprocess_image(image, standardize=False, data_dir=None):
     """
     nilearn_dir = get_data_dir(op.join(data_dir, "nilearn"))
 
-    image_emb_gene = ImageEmbedding(standardize=standardize, data_dir=nilearn_dir)
+    image_emb_gene = ImageEmbedding(
+        standardize=standardize,
+        nilearn_dir=nilearn_dir,
+        space=space,
+        density=density,
+    )
     image_embedding_arr = image_emb_gene(image)
 
     return torch.from_numpy(image_embedding_arr).float()
@@ -35,10 +40,9 @@ def image_to_labels(
     vocabulary_emb,
     prior_probability,
     topk=10,
-    standardize=False,
     logit_scale=None,
-    data_dir=None,
     device=None,
+    **kwargs,
 ):
     """
     Predict the label of an image.
@@ -52,8 +56,10 @@ def image_to_labels(
     if device is None:
         device = _get_device()
 
-    image = load_img(image)
-    image_input = preprocess_image(image, standardize=standardize, data_dir=data_dir).to(device)
+    if isinstance(image, str):
+        image = load_img(image)
+
+    image_input = preprocess_image(image, **kwargs).to(device)
     text_inputs = torch.from_numpy(vocabulary_emb).float().to(device)
     prior_probability = torch.from_numpy(prior_probability).float().to(device)
 

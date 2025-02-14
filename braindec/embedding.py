@@ -1,19 +1,20 @@
 """Code to determine embeddings for text and images."""
 
+import warnings
 from typing import List, Union
 
 import numpy as np
 import torch
 from nilearn import datasets
 from nilearn.image import concat_imgs
-from nilearn.maskers import MultiNiftiMapsMasker
+from nilearn.maskers import NiftiMapsMasker, SurfaceMapsMasker
 from nimare.dataset import Dataset
 from nimare.meta.kernel import MKDAKernel
 from peft import PeftConfig, PeftModel
 from tqdm import tqdm
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 
-from braindec.utils import _get_device
+from braindec.utils import _get_device, _vol_surfimg
 
 
 def _coordinates_to_image(dset: Dataset, kernel: str = "mkda"):
@@ -206,12 +207,17 @@ class TextEmbedding:
 
 
 class ImageEmbedding:
+    _default_density = {"fsLR": "32k", "fsaverage": "164k", "civet": "32k"}
+
     def __init__(
         self,
         standardize: bool = False,
-        data_dir: str = None,
+        nilearn_dir: str = None,
+        neuromaps_dir: str = None,
         atlas: str = "difumo",
         dimension: int = 512,
+        space: str = "MNI152",
+        density: str = None,
     ):
         """
         Initialize the image embedding generator with specified model.
@@ -219,21 +225,44 @@ class ImageEmbedding:
         Args:
             model_name: Name of the DeiT model to use
         """
-        self.data_dir = data_dir
+        self.nilearn_dir = nilearn_dir
+        self.neuromaps_dir = neuromaps_dir
+
         self.atlas = atlas
         self.dimension = dimension
+        self.space = space
+        self.density = density
 
-        if atlas == "difumo":
+        if self.atlas == "difumo":
             difumo = datasets.fetch_atlas_difumo(
-                dimension=dimension,
+                dimension=self.dimension,
                 resolution_mm=2,
                 legacy_format=False,
-                data_dir=data_dir,
+                data_dir=self.nilearn_dir,
             )
-            self.masker = MultiNiftiMapsMasker(maps_img=difumo.maps, standardize=standardize)
+            atlas_maps = difumo.maps
         else:
             # Implement other atlases
             raise ValueError(f"Atlas {atlas} not supported.")
+
+        if self.space == "MNI152":
+            self.masker = NiftiMapsMasker(maps_img=atlas_maps, standardize=standardize)
+
+        elif self.space in ["fsLR", "fsaverage", "civet"]:
+            warnings.warn("Do not use this for now. As the training was done in MNI space.")
+            self.density = self._default_density[space] if self.density is None else self.density
+
+            # Trasnform atlas to surface
+            atlas_surf = _vol_surfimg(
+                atlas_maps,
+                space=self.space,
+                density=self.density,
+                neuromaps_dir=self.neuromaps_dir,
+            )
+
+            self.masker = SurfaceMapsMasker(maps_img=atlas_surf, standardize=standardize)
+        else:
+            raise ValueError(f"Space {self.space} not supported.")
 
     def generate_embedding(self, images) -> np.ndarray:
         """

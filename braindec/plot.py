@@ -235,7 +235,12 @@ def plot_vol(
 
 
 def plot_surf(ibma_img_fn, out_file, mask_contours=None, vmax=8, cmap=CMAP):
-    map_lh, map_rh = _vol_to_surf(ibma_img_fn, return_hemis=True)
+    if isinstance(ibma_img_fn, str):
+        map_lh, map_rh = _vol_to_surf(ibma_img_fn, return_hemis=True)
+    elif isinstance(ibma_img_fn, tuple):
+        map_lh, map_rh = ibma_img_fn
+        if isinstance(ibma_img_fn[0], str):
+            map_lh, map_rh, _ = _zero_medial_wall(map_lh, map_rh)
 
     surfaces = fetch_fslr(density="32k")
     lh, rh = surfaces["inflated"]
