@@ -17,6 +17,20 @@ def _get_parser():
         required=True,
         help="Path to project directory",
     )
+    parser.add_argument(
+        "--section",
+        dest="section",
+        default="abstract",
+        help="Section to extract text from (default: abstract). Possible values: abstract, body.",
+    )
+    parser.add_argument(
+        "--model_id",
+        dest="model_id",
+        default="mistralai/Mistral-7B-v0.1",
+        help="Model ID for text embedding (default: mistralai/Mistral-7B-v0.1). Possible values: "
+        "mistralai/Mistral-7B-v0.1, meta-llama/Llama-2-7b-chat-hf, BrainGPT/BrainGPT-7B-v0.1, "
+        "BrainGPT/BrainGPT-7B-v0.2.",
+    )
     return parser
 
 
@@ -63,23 +77,29 @@ def _get_prior_prob_old(doc_emb, emb, temperature=10, n_top_docs=10):
     return prior, top_n_indices
 
 
-def main(project_dir):
+def main(project_dir, section="body", model_id="BrainGPT/BrainGPT-7B-v0.2"):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     voc_dir = op.join(data_dir, "vocabulary")
     text_dir = op.join(data_dir, "text")
-    source = "cogatlas"  # cogatlas, neurosynth
-    section = "body"  # abstract, body
+    braindec_dir = op.join(project_dir, "results", "pubmed")
+    source = "cogatlas"  # Only use cogatlas for now
     n_top_docs = 10
-    model_id = "BrainGPT/BrainGPT-7B-v0.2"
     model_name = model_id.split("/")[-1]
 
     dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_nimare.pkl"))
     pmids = dset.texts["study_id"].values
     doc_emb_fn = op.join(text_dir, f"text-raw_section-{section}_embedding-{model_name}.npy")
     doc_emb = np.load(doc_emb_fn)
-    # TODO: Use the training indices to slice the docuemnt and calculate the prior
-    #       only on the training set. Add section to the file name
+
+    # Only calculate priors on the training set
+    indices_fn = op.join(
+        braindec_dir,
+        f"model-clip_section-{section}_embedding-{model_name}_best-indices.npz",
+    )
+    indices_dict = np.load(indices_fn)
+    train_indices = indices_dict["train"]
+    doc_emb = doc_emb[train_indices]
 
     for category in ["task", "concept"]:
         for sub_category in ["names", "definitions", "combined"]:
