@@ -1,8 +1,8 @@
 import os
 import os.path as op
 
-import numpy as np
-from nimare.decode.continuous import CorrelationDecoder
+from nimare.annotate.gclda import GCLDAModel
+from nimare.decode.continuous import CorrelationDecoder, gclda_decode_map
 from nimare.utils import get_resource_path
 from utils import _read_vocabulary
 
@@ -18,6 +18,7 @@ def main():
     results_dir = op.join(project_dir, "results")
     section = "body"  # abstract, body
     voc_source = "cogatlas"  # cogatlas, neurosynth
+    categories = ["task"]  # ["task", "concept"]
     sub_category = "combined"  # "names", "combined"
     topk = 20  # top k predictions
     standardize = False
@@ -25,19 +26,6 @@ def main():
     device = "mps"
     model_id = "BrainGPT/BrainGPT-7B-v0.2"  # BrainGPT/BrainGPT-7B-v0.2, mistralai/Mistral-7B-v0.1
     model_name = model_id.split("/")[-1]
-
-    # --------------------------------------------------------------------
-    # Load baseline model
-    ns_model_fn = op.join(data_dir, "neurosynth", "neurosynth-abstract.pkl.gz")
-    if not op.isfile(ns_model_fn):
-        metamaps_dir = op.join(data_dir, "neurosynth", "metamaps")
-        mask_img = op.join(get_resource_path(), "templates", "MNI152_2x2x2_brainmask.nii.gz")
-
-        decoder = CorrelationDecoder()
-        decoder.load_imgs(metamaps_dir, mask=mask_img)
-        decoder.save(ns_model_fn)
-    else:
-        decoder = CorrelationDecoder.load(ns_model_fn)
 
     # --------------------------------------------------------------------
     # Set path to AI Decoder model and vocabulary
@@ -67,7 +55,7 @@ def main():
             vmax=8,
         )
 
-        for category in ["task", "concept"]:
+        for category in categories:
             vocabulary_lb = (
                 f"vocabulary-{voc_source}_{category}-{sub_category}_embedding-{model_name}"
             )
@@ -79,6 +67,10 @@ def main():
                 vocabulary_emb_fn,
                 vocabulary_prior_fn,
             )
+
+            brainclip_out_fn = f"{vocabulary_lb}_section-{section}_brainclip.csv"
+            ns_out_fn = f"vocabulary-{voc_source}_{category}-names_embedding-{model_name}_section-{section}_neurosynth.csv"
+            gclda_out_fn = f"vocabulary-{voc_source}_{category}-names_embedding-{model_name}_section-{section}_gclda.csv"
 
             predictions_df = image_to_labels(
                 img,
@@ -92,14 +84,38 @@ def main():
                 data_dir=data_dir,
                 device=device,
             )
+            predictions_df.to_csv(op.join(output_dir, brainclip_out_fn), index=False)
 
-            out_fn = f"{vocabulary_lb}_section-{section}_brainclip.csv"
-            predictions_df.to_csv(op.join(output_dir, out_fn), index=False)
+            # Baseline
+            # --------------------------------------------------------------------
+            # Load baseline model
+            ns_model_fn = op.join(
+                results_dir,
+                "baseline",
+                f"model-neurosynth_{voc_source}-{category}_embedding-{model_name}_section-{section}.pkl",
+            )
+            gclda_model_fn = op.join(
+                results_dir,
+                "baseline",
+                f"model-gclda_{voc_source}-{category}_embedding-{model_name}_section-{section}.pkl",
+            )
 
-        ns_predictions_df = decoder.transform(img)
-        ns_predictions_df = ns_predictions_df.sort_values(by="r", ascending=False).head(topk)
-        out_baseline_fn = f"section-{section}_neurosynth.csv"
-        ns_predictions_df.to_csv(op.join(output_dir, out_baseline_fn), index=True)
+            gclda_model = GCLDAModel.load(gclda_model_fn)
+            gclda_predictions_df, _ = gclda_decode_map(gclda_model, img)
+            gclda_predictions_df = gclda_predictions_df.sort_values(
+                by="Weight", ascending=False
+            ).head(topk)
+            gclda_predictions_df.to_csv(op.join(output_dir, gclda_out_fn), index=True)
+
+            ns_decoder = CorrelationDecoder.load(ns_model_fn)
+            ns_predictions_df = ns_decoder.transform(img)
+            feature_group = f"{voc_source}-{category}_section-{section}_annot-tfidf__"
+            feature_names = ns_predictions_df.index.values
+            vocabulary_names = [f.replace(feature_group, "") for f in feature_names]
+            ns_predictions_df.index = vocabulary_names
+
+            ns_predictions_df = ns_predictions_df.sort_values(by="r", ascending=False).head(topk)
+            ns_predictions_df.to_csv(op.join(output_dir, ns_out_fn), index=True)
 
 
 if __name__ == "__main__":
