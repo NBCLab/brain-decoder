@@ -4,6 +4,7 @@ import re
 
 import nimare
 import numpy as np
+import pandas as pd
 
 from braindec.dataset import _get_vocabulary
 from braindec.embedding import TextEmbedding
@@ -17,6 +18,14 @@ def _get_parser():
         dest="project_dir",
         required=True,
         help="Path to project directory",
+    )
+    parser.add_argument(
+        "--model_id",
+        dest="model_id",
+        default="BrainGPT/BrainGPT-7B-v0.2",
+        help="Model ID for text embedding (default: BrainGPT/BrainGPT-7B-v0.2). Possible values: "
+        "mistralai/Mistral-7B-v0.1, meta-llama/Llama-2-7b-chat-hf, BrainGPT/BrainGPT-7B-v0.1, "
+        "BrainGPT/BrainGPT-7B-v0.2.",
     )
     return parser
 
@@ -80,7 +89,23 @@ def _get_counts_tfidf(data_df, vocabulary):
     return np.array(count_arr), np.array(tfidf_arr)
 
 
-def main(project_dir):
+def _annotate_dset(dset, vocabulary, data, prefix):
+    vocabulary_names = [f"{prefix}__{word}" for word in vocabulary]
+
+    annot_df = pd.DataFrame(
+        index=dset.annotations["id"],
+        columns=vocabulary_names,
+        data=data,
+    )
+
+    annotations = dset.annotations.copy()
+    annotations = pd.merge(annotations, annot_df, left_on="id", right_index=True)
+    new_dset = dset.copy()
+    new_dset.annotations = annotations
+    return new_dset
+
+
+def main(project_dir, model_id="BrainGPT/BrainGPT-7B-v0.2"):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     voc_dir = op.join(data_dir, "vocabulary")
@@ -92,7 +117,6 @@ def main(project_dir):
 
     dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_nimare.pkl"))
 
-    model_id = "BrainGPT/BrainGPT-7B-v0.2"
     model_name = model_id.split("/")[-1]
     generator = TextEmbedding(model_name=model_id)  # , device="cpu"
 
@@ -116,6 +140,11 @@ def main(project_dir):
                 np.save(counts_fn, counts)
                 np.save(tfidf_fn, tfidf)
 
+                # Annotate dataset
+                for data, data_lb in zip([counts, tfidf], ["counts", "tfidf"]):
+                    prefix = f"{source}-{category}_section-{section}_annot-{data_lb}"
+                    dset = _annotate_dset(dset, names, data.T, prefix)
+
             names_emb = generator(names)
             definitions_emb = generator(definitions)
             combined_emb = names_emb * alpha + definitions_emb * (1 - alpha)
@@ -128,6 +157,8 @@ def main(project_dir):
 
                 _write_vocabulary(names_org, names_fn)
                 np.save(emb_fn, emb)
+
+        dset.save(op.join(data_dir, "dset-pubmed_annotated_nimare.pkl"))
 
     else:
         vocabulary = _get_vocabulary(source=source, data_dir=data_dir)
