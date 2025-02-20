@@ -39,6 +39,10 @@ def image_to_labels(
     vocabulary,
     vocabulary_emb,
     prior_probability,
+    concept_to_task_idxs,
+    process_to_concept_idxs,
+    concept_names,
+    process_names,
     topk=10,
     logit_scale=None,
     device=None,
@@ -79,8 +83,10 @@ def image_to_labels(
 
     # Pick the top topk most similar labels for the image
     # similarity = logit_scale * image_features @ text_features.T
-    likelihood = (logit_scale * image_features @ text_features.T).softmax(dim=-1)
+    similarity = logit_scale * image_features @ text_features.T
+    likelihood = similarity.softmax(dim=-1)
     # Flatten the probability distribution, since image_features is a single image
+    similarity = similarity.flatten()
     likelihood = likelihood.flatten()  # P(A|T)
 
     joint_probability = likelihood * prior_probability  # P(A|T) * P(A)
@@ -92,22 +98,61 @@ def image_to_labels(
     prior_odds = prior_probability / (1 - prior_probability)
     bayes_factor = posterrior_odds / prior_odds
 
+    # Calculate P(C|A) = 1 - Prod(1 - P(T|A))
+    concept_posterior_probability = torch.zeros(len(concept_names))  # Pre-allocate tensor
+    for c_i in range(len(concept_names)):
+        task_indices = concept_to_task_idxs[c_i]
+        concept_probability = 1 - (1 - posterior_probability[task_indices]).prod()
+        concept_posterior_probability[c_i] = concept_probability.cpu().detach()
+
+    process_posterior_probability = torch.zeros(len(process_names))  # Pre-allocate tensor
+    for p_i in range(len(process_names)):
+        concept_indices = process_to_concept_idxs[p_i]
+        process_probability = 1 - (1 - concept_posterior_probability[concept_indices]).prod()
+        process_posterior_probability[p_i] = process_probability.cpu().detach()
+
     # Get the top k predictions
-    values, indices = posterior_probability.topk(topk)
-    selectivity = values.cpu().detach().numpy()
-    indices = indices.cpu().detach().numpy()
+    top_concepts, top_concept_indices = concept_posterior_probability.topk(topk)
+    top_concept_indices = top_concept_indices.cpu().detach().numpy()
+    top_concepts = top_concepts.cpu().detach().numpy()
+
+    # top_processes, top_process_indices = process_posterior_probability.topk(topk)
+    top_processes, top_process_indices = torch.sort(process_posterior_probability, descending=True)
+    top_process_indices = top_process_indices.cpu().detach().numpy()
+    top_processes = top_processes.cpu().detach().numpy()
+
+    # Get top tasks
+    top_similarity, top_indices = similarity.topk(topk)
+    top_indices = top_indices.cpu().detach().numpy()
+    top_similarity = top_similarity.cpu().detach().numpy()
+
+    selectivity = posterior_probability.cpu().detach().numpy()
     likelihood = likelihood.cpu().detach().numpy()
     joint_probability = joint_probability.cpu().detach().numpy()
     prior_probability = prior_probability.cpu().detach().numpy()
     bayes_factor = bayes_factor.cpu().detach().numpy()
 
-    return pd.DataFrame(
+    process_prob_df = pd.DataFrame(
         {
-            "label": np.array(vocabulary)[indices],
-            "likelihood": likelihood[indices],
-            "prior_prob": prior_probability[indices],
-            "joint_prob": joint_probability[indices],
-            "posterior_prob": selectivity,
-            "bayes_factor": bayes_factor[indices],
+            "process": np.array(process_names)[top_process_indices],
+            "prob": top_processes,
         }
     )
+    concept_prob_df = pd.DataFrame(
+        {
+            "concept": np.array(concept_names)[top_concept_indices],
+            "prob": top_concepts,
+        }
+    )
+    task_prob_df = pd.DataFrame(
+        {
+            "task": np.array(vocabulary)[top_indices],
+            "similarity": top_similarity,
+            "likelihood": likelihood[top_indices],
+            "prior_prob": prior_probability[top_indices],
+            "joint_prob": joint_probability[top_indices],
+            "posterior_prob": selectivity[top_indices],
+            "bayes_factor": bayes_factor[top_indices],
+        }
+    )
+    return task_prob_df, concept_prob_df, process_prob_df
