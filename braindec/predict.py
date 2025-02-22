@@ -122,11 +122,11 @@ def image_to_labels(
     top_processes = top_processes.cpu().detach().numpy()
 
     # Get top tasks
-    top_similarity, top_indices = similarity.topk(topk)
+    top_task_prob, top_indices = posterior_probability.topk(topk)
     top_indices = top_indices.cpu().detach().numpy()
-    top_similarity = top_similarity.cpu().detach().numpy()
+    top_task_prob = top_task_prob.cpu().detach().numpy()
 
-    selectivity = posterior_probability.cpu().detach().numpy()
+    similarity = similarity.cpu().detach().numpy()
     likelihood = likelihood.cpu().detach().numpy()
     joint_probability = joint_probability.cpu().detach().numpy()
     prior_probability = prior_probability.cpu().detach().numpy()
@@ -147,11 +147,11 @@ def image_to_labels(
     task_prob_df = pd.DataFrame(
         {
             "task": np.array(vocabulary)[top_indices],
-            "similarity": top_similarity,
+            "posterior": top_task_prob,
+            "similarity": similarity[top_indices],
             "likelihood": likelihood[top_indices],
             "prior_prob": prior_probability[top_indices],
             "joint_prob": joint_probability[top_indices],
-            "posterior_prob": selectivity[top_indices],
             "bayes_factor": bayes_factor[top_indices],
         }
     )
