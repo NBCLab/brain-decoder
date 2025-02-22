@@ -23,6 +23,25 @@ CLASSES_MAPPING = {
     "ctp_C10": "Motivation",
 }
 
+MISSING_CONCEPTS_MAPPING = {
+    "anticipation": "ctp_C7",
+    "arousal": "ctp_C8",
+    "arithmetic processing": "ctp_C3",
+    "concept": "ctp_C3",
+    "effort": "ctp_C7",
+    "creative thinking": "ctp_C3",
+    "emotion regulation": "ctp_C8",
+    "emotional enhancement": "ctp_C8",
+    "guilt": "ctp_C8",
+    "imagination": "ctp_C3",
+    "phonological processing": "ctp_C6",
+    "semantic categorization": "ctp_C6",
+    "story comprehension": "ctp_C6",
+    "visual orientation": "ctp_C4",
+    "strategy": "ctp_C3",
+    "thought": "ctp_C3",
+}
+
 
 def _get_cogatlas_dict(url):
     try:
@@ -66,6 +85,11 @@ class CognitiveAtlas:
         self.concept_df = self.concept_df.dropna(subset=["name", "definition_text"])
         self.concept_names = self.concept_df["name"].to_list()
         self.concept_definitions = self.concept_df["definition_text"].to_list()
+
+        mask = self.concept_df["name"].isin(MISSING_CONCEPTS_MAPPING.keys())
+        self.concept_df.loc[mask, "id_concept_class"] = self.concept_df.loc[mask, "name"].map(
+            MISSING_CONCEPTS_MAPPING
+        )
 
         # Add Cognitive Process name to concept dataframe
         cog_proc_mapping_df = pd.DataFrame(
