@@ -12,6 +12,7 @@ from nilearn import datasets
 from nilearn.plotting import plot_stat_map
 from nilearn.plotting.cm import _cmap_d as nilearn_cmaps
 from surfplot import Plot
+from surfplot.utils import threshold
 
 from braindec.utils import _vol_to_surf, _zero_medial_wall
 
@@ -234,23 +235,30 @@ def plot_vol(
     fig.savefig(out_file, bbox_inches="tight", dpi=300)
 
 
-def plot_surf(ibma_img_fn, out_file, mask_contours=None, vmax=8, cmap=CMAP):
+def plot_surf(ibma_img_fn, out_file, mask_contours=None, vmax=8, cmap=CMAP, threshold_=0.5):
     if isinstance(ibma_img_fn, str):
-        map_lh, map_rh = _vol_to_surf(ibma_img_fn, return_hemis=True)
+        map_lh, map_rh, _ = _vol_to_surf(ibma_img_fn, return_hemis=True, return_arrays=True)
     elif isinstance(ibma_img_fn, tuple):
         map_lh, map_rh = ibma_img_fn
         if isinstance(ibma_img_fn[0], str):
-            map_lh, map_rh, _ = _zero_medial_wall(map_lh, map_rh)
+            map_lh, map_rh, _ = _zero_medial_wall(map_lh, map_rh, return_arrays=True)
 
     surfaces = fetch_fslr(density="32k")
     lh, rh = surfaces["inflated"]
     sulc_lh, sulc_rh = surfaces["sulc"]
 
+    if threshold_:
+        map_lh = threshold(map_lh, threshold_)
+        map_rh = threshold(map_rh, threshold_)
+
     p = Plot(surf_lh=lh, surf_rh=rh, layout="grid")
     p.add_layer({"left": sulc_lh, "right": sulc_rh}, cmap="binary_r", cbar=False)
     p.add_layer(
-        {"left": map_lh, "right": map_rh}, cmap=cmap, cbar=False, color_range=(-vmax, vmax)
+        {"left": map_lh, "right": map_rh},
+        cmap=cmap,
+        cbar=False,
     )
+    # color_range=(-vmax, vmax)
     if mask_contours:
         mask_lh, mask_rh = transforms.mni152_to_fslr(mask_contours, fslr_density="32k")
         mask_lh, mask_rh = _zero_medial_wall(
