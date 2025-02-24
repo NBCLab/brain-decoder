@@ -79,7 +79,7 @@ def main(
 
     model_name = model_id.split("/")[-1]
     os.makedirs(results_dir, exist_ok=True)
-    n_cores = 8
+    n_cores = -1
 
     dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_annotated_nimare.pkl"))
     indices_fn = op.join(
@@ -119,7 +119,7 @@ def main(
             counts_df,
             dset.coordinates,
             mask=dset.masker.mask_img,
-            n_topics=100,
+            n_topics=50,
             n_regions=4,
             symmetric=True,
         )
@@ -133,23 +133,28 @@ def main(
 def _main(argv=None):
     option = _get_parser().parse_args(argv)
     kwargs = vars(option)
-    main(**kwargs)
-    """
-    for category, model_id in itertools.product(
-        ["task", "concept"],
-        [
-            "BrainGPT/BrainGPT-7B-v0.1",
-            # "mistralai/Mistral-7B-v0.1",
-        ],
+    # main(**kwargs)
+
+    categories = ["task", "concept"]
+    model_ids = [
+        "BrainGPT/BrainGPT-7B-v0.2",
+        "mistralai/Mistral-7B-v0.1",
+        "BrainGPT/BrainGPT-7B-v0.1",
+        "meta-llama/Llama-2-7b-chat-hf",
+    ]
+    sections = ["abstract", "body"]
+    baselines = ["gclda"]  # "gclda"
+    for category, section, baseline, model_id in itertools.product(
+        categories, sections, baselines, model_ids
     ):
+        print(f"Training {baseline} model for {category} in {section} with {model_id}")
         main(
             kwargs["project_dir"],
             category=category,
-            section="body",
-            baseline="neurosynth",
+            section=section,
+            baseline=baseline,
             model_id=model_id,
         )
-    """
 
 
 if __name__ == "__main__":
