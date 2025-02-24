@@ -1,6 +1,6 @@
 import argparse
+import os
 import os.path as op
-import re
 
 import nimare
 import numpy as np
@@ -19,14 +19,6 @@ def _get_parser():
         required=True,
         help="Path to project directory",
     )
-    parser.add_argument(
-        "--model_id",
-        dest="model_id",
-        default="BrainGPT/BrainGPT-7B-v0.2",
-        help="Model ID for text embedding (default: BrainGPT/BrainGPT-7B-v0.2). Possible values: "
-        "mistralai/Mistral-7B-v0.1, meta-llama/Llama-2-7b-chat-hf, BrainGPT/BrainGPT-7B-v0.1, "
-        "BrainGPT/BrainGPT-7B-v0.2.",
-    )
     return parser
 
 
@@ -36,18 +28,7 @@ def _write_vocabulary(vocabulary, vocabulary_fn):
             f.write("%s\n" % item)
 
 
-def _preprocess_text(text):
-    # Remove special characters from the text; e.g., "fMRI", "localizer", "task", "paradigm"
-    # text = [
-    #    t.replace("fMRI", "").replace("localizer", "").replace("task", "").replace("paradigm", "")
-    #    for t in text
-    # ]
-
-    text = re.sub(r"^\S", lambda m: m.group().lower(), text)
-    return text
-
-
-def _get_counts_tfidf(data_df, vocabulary):
+def _get_counts_tfidf(data_df, vocabulary, text_column):
     stoplist = op.join(nimare.utils.get_resource_path(), "neurosynth_stoplist.txt")
     with open(stoplist, "r") as fo:
         stop_words = fo.read().splitlines()
@@ -75,7 +56,7 @@ def _get_counts_tfidf(data_df, vocabulary):
         data_df,
         vocabulary=new_vocabulary,
         stop_words=stop_words,
-        text_column="body",
+        text_column=text_column,
     )
 
     count_arr = []
@@ -105,7 +86,7 @@ def _annotate_dset(dset, vocabulary, data, prefix):
     return new_dset
 
 
-def main(project_dir, model_id="BrainGPT/BrainGPT-7B-v0.2"):
+def main(project_dir):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     voc_dir = op.join(data_dir, "vocabulary")
@@ -114,6 +95,7 @@ def main(project_dir, model_id="BrainGPT/BrainGPT-7B-v0.2"):
     categories = ["task", "concept"]
     sub_categories = ["names", "definitions", "combined"]
     sections = ["abstract", "body"]
+    os.makedirs(voc_dir, exist_ok=True)
 
     dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_nimare.pkl"))
 
@@ -123,54 +105,56 @@ def main(project_dir, model_id="BrainGPT/BrainGPT-7B-v0.2"):
         concept_snapshot=op.join(data_dir, "cognitive_atlas", "concept_snapshot-02-19-25.json"),
     )
 
-    model_name = model_id.split("/")[-1]
-    generator = TextEmbedding(model_name=model_id)
+    model_ids = [
+        "BrainGPT/BrainGPT-7B-v0.2",
+        "mistralai/Mistral-7B-v0.1",
+        "BrainGPT/BrainGPT-7B-v0.1",
+        "meta-llama/Llama-2-7b-chat-hf",
+    ]
+    for model_id in model_ids:
+        model_name = model_id.split("/")[-1]
+        generator = TextEmbedding(model_name=model_id)
 
-    for category in categories:
-        if category == "task":
-            names_org = cognitiveatlas.task_names
-            definitions_org = cognitiveatlas.task_definitions
-        elif category == "concept":
-            names_org = cognitiveatlas.concept_names
-            definitions_org = cognitiveatlas.concept_definitions
-        else:
-            raise ValueError(f"Invalid category: {category}")
+        for category in categories:
+            if category == "task":
+                names = cognitiveatlas.task_names
+                definitions = cognitiveatlas.task_definitions
+            elif category == "concept":
+                names = cognitiveatlas.concept_names
+                definitions = cognitiveatlas.concept_definitions
+            else:
+                raise ValueError(f"Invalid category: {category}")
 
-        # names = _preprocess_text(names_org)
-        # definitions = _preprocess_text(definitions_org)
-        names = names_org
-        definitions = definitions_org
+            names_fn = op.join(voc_dir, f"vocabulary-{source}_{category}.txt")
+            _write_vocabulary(names, names_fn)
 
-        # Get counts and tfidf
-        for section in sections:
-            lb = f"vocabulary-{source}_{category}-names_embedding-{model_name}"
-            counts_fn = op.join(voc_dir, f"{lb}_section-{section}_counts.npy")
-            tfidf_fn = op.join(voc_dir, f"{lb}_section-{section}_tfidf.npy")
+            names_emb = generator(names)
+            definitions_emb = generator(definitions)
+            combined_emb = names_emb * alpha + definitions_emb * (1 - alpha)
 
-            counts, tfidf = _get_counts_tfidf(dset.texts, names)
-            np.save(counts_fn, counts)
-            np.save(tfidf_fn, tfidf)
+            embeddings = [names_emb, definitions_emb, combined_emb]
+            for sub_category, emb in zip(sub_categories, embeddings):
+                lb = f"vocabulary-{source}_{category}-{sub_category}_embedding-{model_name}"
+                emb_fn = op.join(voc_dir, f"{lb}.npy")
+                np.save(emb_fn, emb)
 
-            # Annotate dataset
-            for data, data_lb in zip([counts, tfidf], ["counts", "tfidf"]):
-                prefix = f"{source}-{category}_section-{section}_annot-{data_lb}"
-                dset = _annotate_dset(dset, names, data.T, prefix)
+            # Get counts and tfidf, only for one model
+            if model_id == "BrainGPT/BrainGPT-7B-v0.2":
+                for section in sections:
+                    base_lb = f"vocabulary-{source}_{category}-names"
+                    counts_fn = op.join(voc_dir, f"{base_lb}_section-{section}_counts.npy")
+                    tfidf_fn = op.join(voc_dir, f"{base_lb}_section-{section}_tfidf.npy")
 
-        names_emb = generator(names)
-        definitions_emb = generator(definitions)
-        combined_emb = names_emb * alpha + definitions_emb * (1 - alpha)
+                    counts, tfidf = _get_counts_tfidf(dset.texts, names, section)
+                    np.save(counts_fn, counts)
+                    np.save(tfidf_fn, tfidf)
 
-        embeddings = [names_emb, definitions_emb, combined_emb]
-        for sub_category, emb in zip(sub_categories, embeddings):
-            lb = f"vocabulary-{source}_{category}-{sub_category}_embedding-{model_name}"
-            emb_fn = op.join(voc_dir, f"{lb}.npy")
+                    # Annotate dataset
+                    for data, data_lb in zip([counts, tfidf], ["counts", "tfidf"]):
+                        prefix = f"{source}-{category}_section-{section}_annot-{data_lb}"
+                        dset = _annotate_dset(dset, names, data.T, prefix)
 
-            np.save(emb_fn, emb)
-
-    names_fn = op.join(voc_dir, f"vocabulary-{source}.txt")
-    _write_vocabulary(names_org, names_fn)
-
-    dset.save(op.join(data_dir, "dset-pubmed_annotated_nimare.pkl"))
+                dset.save(op.join(data_dir, "dset-pubmed_annotated_nimare.pkl"))
 
 
 def _main(argv=None):
