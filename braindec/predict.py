@@ -134,20 +134,20 @@ def image_to_labels(
 
     process_prob_df = pd.DataFrame(
         {
-            "process": np.array(process_names)[top_process_indices],
+            "pred": np.array(process_names)[top_process_indices],
             "prob": top_processes,
         }
     )
     concept_prob_df = pd.DataFrame(
         {
-            "concept": np.array(concept_names)[top_concept_indices],
+            "pred": np.array(concept_names)[top_concept_indices],
             "prob": top_concepts,
         }
     )
     task_prob_df = pd.DataFrame(
         {
-            "task": np.array(vocabulary)[top_indices],
-            "posterior": top_task_prob,
+            "pred": np.array(vocabulary)[top_indices],
+            "prob": top_task_prob,
             "similarity": similarity[top_indices],
             "likelihood": likelihood[top_indices],
             "prior_prob": prior_probability[top_indices],
