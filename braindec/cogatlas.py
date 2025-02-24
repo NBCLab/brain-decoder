@@ -77,14 +77,19 @@ class CognitiveAtlas:
         self.task_df = pd.DataFrame(self.task)
         self.task_df = self.task_df.replace("", np.nan)
         self.task_df = self.task_df.dropna(subset=["name", "definition_text"])
+        self.task_ids = self.task_df["id"].to_list()
         self.task_names = self.task_df["name"].to_list()
         self.task_definitions = self.task_df["definition_text"].to_list()
 
         self.concept_df = pd.DataFrame(self.concept)
         self.concept_df = self.concept_df.replace("", np.nan)
         self.concept_df = self.concept_df.dropna(subset=["name", "definition_text"])
+        self.concept_ids = self.concept_df["id"].to_list()
         self.concept_names = self.concept_df["name"].to_list()
         self.concept_definitions = self.concept_df["definition_text"].to_list()
+
+        self.process_ids = list(CLASSES_MAPPING.keys())
+        self.process_names = list(CLASSES_MAPPING.values())
 
         mask = self.concept_df["name"].isin(MISSING_CONCEPTS_MAPPING.keys())
         self.concept_df.loc[mask, "id_concept_class"] = self.concept_df.loc[mask, "name"].map(
@@ -124,10 +129,58 @@ class CognitiveAtlas:
 
             self.concept_to_task_idxs.append(indices)
 
-        self.process_names = list(CLASSES_MAPPING.values())
         self.process_to_concept_idxs = []
         for process in self.process_names:
             sel_df = self.concept_df.loc[self.concept_df["cognitive_process"] == process]
             indices = np.where(np.in1d(self.concept_df["id"].values, sel_df["id"].values))[0]
 
             self.process_to_concept_idxs.append(indices)
+
+        self.task_to_concept_idxs = []
+        for task in self.task_df["id"]:
+            sel_df = concepts_to_tasks_df.loc[concepts_to_tasks_df["measuredBy"] == task]
+            if len(sel_df) == 0:
+                self.task_to_concept_idxs.append(np.array([]))
+                continue
+
+            sel_concepts = sel_df["id"].values
+            indices = np.where(np.in1d(self.concept_df["id"].values, sel_concepts))[0]
+
+            self.task_to_concept_idxs.append(indices)
+
+        self.task_to_process_idxs = []
+        for task in self.task_df["id"]:
+            sel_concepts = concepts_to_tasks_df.loc[concepts_to_tasks_df["measuredBy"] == task][
+                "id"
+            ].values
+            sel_df = self.concept_df.loc[self.concept_df["id"].isin(sel_concepts)]
+            indices = np.where(np.in1d(self.process_ids, sel_df["id_concept_class"].values))[0]
+
+            self.task_to_process_idxs.append(indices)
+
+    def get_task_idx_from_names(self, task_names):
+        return np.where(np.in1d(self.task_names, task_names))[0]
+
+    def get_concept_idx_from_names(self, concept_names):
+        return np.where(np.in1d(self.concept_names, concept_names))[0]
+
+    def get_process_idx_from_names(self, process_names):
+        return np.where(np.in1d(self.process_names, process_names))[0]
+
+    def get_task_names_from_idx(self, task_idx):
+        return np.array(self.task_names)[task_idx]
+
+    def get_concept_names_from_idx(self, concept_idx):
+        return np.array(self.concept_names)[concept_idx]
+
+    def get_process_names_from_idx(self, process_idx):
+        return np.array(self.process_names)[process_idx]
+
+    def get_task_idx_from_concept_idx(self, concept_idx):
+        return self.concept_to_task_idxs[concept_idx]
+
+    def get_concept_idx_from_task_idx(self, task_idx):
+        return self.task_to_concept_idxs[task_idx]
+
+    def get_concept_idx_from_process_idx(self, process_idx):
+        return self.process_to_concept_idxs[process_idx]
