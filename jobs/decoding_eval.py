@@ -1,4 +1,5 @@
 import itertools
+import json
 import os
 import os.path as op
 from glob import glob
@@ -12,6 +13,11 @@ from braindec.cogatlas import CognitiveAtlas
 def _recall_at_n(true_lb, pred_lb, n):
     if isinstance(true_lb, int):
         true_lb = [true_lb]
+
+    # Check if empty
+    # if true_lb:
+    #     print("Empty true labels")
+    #     return 0
 
     return len(np.intersect1d(true_lb, pred_lb[:n])) / len(true_lb)
 
@@ -37,14 +43,24 @@ def main():
     output_dir = op.join(results_dir, "predictions_ibc")
     os.makedirs(output_dir, exist_ok=True)
 
+    concept_to_task_fn = op.join(data_dir, "cognitive_atlas", "concept_to_task.json")
+    with open(concept_to_task_fn, "r") as file:
+        concept_to_task = json.load(file)
+
+    concept_to_process_fn = op.join(data_dir, "cognitive_atlas", "concept_to_process.json")
+    with open(concept_to_process_fn, "r") as file:
+        concept_to_process = json.load(file)
+
     cognitiveatlas = CognitiveAtlas(
         data_dir=data_dir,
         task_snapshot=op.join(data_dir, "cognitive_atlas", "task_snapshot-02-19-25.json"),
         concept_snapshot=op.join(data_dir, "cognitive_atlas", "concept_snapshot-02-19-25.json"),
+        concept_to_task=concept_to_task,
+        concept_to_process=concept_to_process,
     )
 
     image_dir = op.join(data_dir, "ibc")
-    images = sorted(glob(op.join(image_dir, "*.nii.gz")))
+    images = sorted(glob(op.join(image_dir, "*.nii.gz")))[:15]
     metadata = pd.read_csv(op.join(data_dir, "ibc", "metadata.csv"))
 
     eval_results = []
@@ -58,8 +74,10 @@ def main():
         for _, img_fn in enumerate(images):
             image_name = op.basename(img_fn).split(".")[0]
             file_lb = f"{image_name}_{vocabulary_lb}"
+            print(f"Processing {image_name}")
 
             task_true = metadata.loc[metadata["file"] == image_name, "task"].values[0]
+            print(f"\tTrue task: {task_true}")
             task_true_idx = cognitiveatlas.task_names.index(task_true)
             concept_true_idx = cognitiveatlas.task_to_concept_idxs[task_true_idx]
             process_true_idx = cognitiveatlas.task_to_process_idxs[task_true_idx]

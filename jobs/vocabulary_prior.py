@@ -31,19 +31,23 @@ def _get_prior_prob_old(doc_emb, emb, temperature=10, n_top_docs=10):
 def main(project_dir):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
-    voc_dir = op.join(data_dir, "vocabulary")
+    reduced = True
+    voc_fn = "vocabulary_reduced" if reduced else "vocabulary"
+    voc_dir = op.join(data_dir, voc_fn)
     text_dir = op.join(data_dir, "text")
     braindec_dir = op.join(project_dir, "results", "pubmed")
     source = "cogatlas"
+    categories = ["task"]  # , "concept"
+    sub_categories = ["names", "definitions", "combined"]
     n_top_docs = 10
 
     model_ids = [
         "BrainGPT/BrainGPT-7B-v0.2",
-        "mistralai/Mistral-7B-v0.1",
-        "BrainGPT/BrainGPT-7B-v0.1",
-        "meta-llama/Llama-2-7b-chat-hf",
+        # "mistralai/Mistral-7B-v0.1",
+        # "BrainGPT/BrainGPT-7B-v0.1",
+        # "meta-llama/Llama-2-7b-chat-hf",
     ]
-    sections = ["abstract", "body"]
+    sections = ["body"]  # "abstract",
     for section, model_id in itertools.product(sections, model_ids):
         model_name = model_id.split("/")[-1]
 
@@ -59,10 +63,10 @@ def main(project_dir):
         train_indices = indices_dict["train"]
         doc_emb = doc_emb[train_indices]
 
-        for category in ["task", "concept"]:
+        for category in categories:
             names_fn = op.join(voc_dir, f"vocabulary-{source}_{category}.txt")
 
-            for sub_category in ["names", "definitions", "combined"]:
+            for sub_category in sub_categories:
                 lb = f"vocabulary-{source}_{category}-{sub_category}_embedding-{model_name}"
                 emb_fn = op.join(voc_dir, f"{lb}.npy")
                 prior_fn = op.join(voc_dir, f"{lb}_section-{section}_prior.npy")

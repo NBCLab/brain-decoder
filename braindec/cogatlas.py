@@ -23,25 +23,6 @@ CLASSES_MAPPING = {
     "ctp_C10": "Motivation",
 }
 
-MISSING_CONCEPTS_MAPPING = {
-    "anticipation": "ctp_C7",
-    "arousal": "ctp_C8",
-    "arithmetic processing": "ctp_C3",
-    "concept": "ctp_C3",
-    "effort": "ctp_C7",
-    "creative thinking": "ctp_C3",
-    "emotion regulation": "ctp_C8",
-    "emotional enhancement": "ctp_C8",
-    "guilt": "ctp_C8",
-    "imagination": "ctp_C3",
-    "phonological processing": "ctp_C6",
-    "semantic categorization": "ctp_C6",
-    "story comprehension": "ctp_C6",
-    "visual orientation": "ctp_C4",
-    "strategy": "ctp_C3",
-    "thought": "ctp_C3",
-}
-
 
 def _get_cogatlas_dict(url):
     try:
@@ -59,8 +40,32 @@ def _get_cogatlas_dict(url):
         return None
 
 
+def _get_concepts_to_tasks(relationships_df, concept_to_task=None):
+    if concept_to_task is not None:
+        concepts, tasks = zip(*concept_to_task.items())
+        n_new_rel = len(concepts)
+        new_relationships = pd.DataFrame(
+            {"input": concepts, "output": tasks, "rel_type": ["measuredBy"] * n_new_rel}
+        )
+        relationships_df = pd.concat([relationships_df, new_relationships], ignore_index=True)
+        relationships_df = relationships_df.drop_duplicates()
+
+    concepts_to_tasks_df = relationships_df.loc[relationships_df["rel_type"] == "measuredBy"]
+    concepts_to_tasks_df = concepts_to_tasks_df.drop(columns=["rel_type"])
+    concepts_to_tasks_df.columns = ["id", "measuredBy"]
+    return concepts_to_tasks_df
+
+
 class CognitiveAtlas:
-    def __init__(self, data_dir=None, task_snapshot=None, concept_snapshot=None):
+    def __init__(
+        self,
+        data_dir=None,
+        task_snapshot=None,
+        concept_snapshot=None,
+        concept_to_task=None,
+        concept_to_process=None,
+        reduced_tasks=None,
+    ):
         if task_snapshot is None:
             self.task = _get_cogatlas_dict(COGATLAS_URLS["task"])
         else:
@@ -77,6 +82,11 @@ class CognitiveAtlas:
         self.task_df = pd.DataFrame(self.task)
         self.task_df = self.task_df.replace("", np.nan)
         self.task_df = self.task_df.dropna(subset=["name", "definition_text"])
+
+        if reduced_tasks is not None:
+            task_to_keep = reduced_tasks["task"].to_list()
+            self.task_df = self.task_df.loc[self.task_df["name"].isin(task_to_keep)]
+
         self.task_ids = self.task_df["id"].to_list()
         self.task_names = self.task_df["name"].to_list()
         self.task_definitions = self.task_df["definition_text"].to_list()
@@ -91,10 +101,11 @@ class CognitiveAtlas:
         self.process_ids = list(CLASSES_MAPPING.keys())
         self.process_names = list(CLASSES_MAPPING.values())
 
-        mask = self.concept_df["name"].isin(MISSING_CONCEPTS_MAPPING.keys())
-        self.concept_df.loc[mask, "id_concept_class"] = self.concept_df.loc[mask, "name"].map(
-            MISSING_CONCEPTS_MAPPING
-        )
+        if concept_to_process is not None:
+            mask = self.concept_df["name"].isin(concept_to_process.keys())
+            self.concept_df.loc[mask, "id_concept_class"] = self.concept_df.loc[mask, "name"].map(
+                concept_to_process
+            )
 
         # Add Cognitive Process name to concept dataframe
         cog_proc_mapping_df = pd.DataFrame(
@@ -109,15 +120,19 @@ class CognitiveAtlas:
             on="id_concept_class",
         )
 
-        cogatlas = extract.download_cognitive_atlas(data_dir=data_dir, overwrite=False)
-        relationships_df = pd.read_csv(cogatlas["relationships"])
+        if reduced_tasks is not None:
+            concepts_to_tasks_df = self._get_concepts_to_tasks_red(reduced_tasks)
+        else:
+            cogatlas = extract.download_cognitive_atlas(data_dir=data_dir, overwrite=False)
+            relationships_df = pd.read_csv(cogatlas["relationships"])
 
-        concepts_to_tasks_df = relationships_df.loc[relationships_df["rel_type"] == "measuredBy"]
-        concepts_to_tasks_df = concepts_to_tasks_df.drop(columns=["rel_type"])
-        concepts_to_tasks_df.columns = ["id", "measuredBy"]
+            concepts_to_tasks_df = _get_concepts_to_tasks(
+                relationships_df,
+                concept_to_task=concept_to_task,
+            )
 
         self.concept_to_task_idxs = []
-        for concept in self.concept_df["id"]:
+        for concept in self.concept_ids:
             sel_df = concepts_to_tasks_df.loc[concepts_to_tasks_df["id"] == concept]
             if len(sel_df) == 0:
                 # append empty numpy array to
@@ -153,10 +168,25 @@ class CognitiveAtlas:
             sel_concepts = concepts_to_tasks_df.loc[concepts_to_tasks_df["measuredBy"] == task][
                 "id"
             ].values
+            if task == "trm_550b54a8b30f4":
+                print(sel_concepts)
+
             sel_df = self.concept_df.loc[self.concept_df["id"].isin(sel_concepts)]
             indices = np.where(np.in1d(self.process_ids, sel_df["id_concept_class"].values))[0]
 
             self.task_to_process_idxs.append(indices)
+
+    def get_concept_id_from_name(self, names):
+        if isinstance(names, str):
+            return self.concept_ids[self.concept_names.index(names)]
+
+        return [self.concept_ids[self.concept_names.index(name)] for name in names]
+
+    def get_task_id_from_name(self, names):
+        if isinstance(names, str):
+            return self.task_ids[self.task_names.index(names)]
+
+        return [self.task_ids[self.task_names.index(name)] for name in names]
 
     def get_task_idx_from_names(self, task_names):
         return np.where(np.in1d(self.task_names, task_names))[0]
@@ -184,3 +214,25 @@ class CognitiveAtlas:
 
     def get_concept_idx_from_process_idx(self, process_idx):
         return self.process_to_concept_idxs[process_idx]
+
+    def _get_concepts_to_tasks_red(self, reduced_tasks):
+        concepts, tasks = [], []
+        for _, row in reduced_tasks.iterrows():
+            task = row["task"]
+            task = self.get_task_id_from_name(task)
+            for col in ["concept_1", "concept_2", "concept_3"]:
+                concept = row[col]
+                if pd.isna(concept):
+                    continue
+                concept = self.get_concept_id_from_name(concept)
+
+                concepts.append(concept)
+                tasks.append(task)
+
+        # Create the new dataframe
+        return pd.DataFrame(
+            {
+                "id": concepts,
+                "measuredBy": tasks,
+            }
+        )

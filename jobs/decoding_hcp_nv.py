@@ -4,6 +4,7 @@ import os.path as op
 from glob import glob
 
 import nibabel as nib
+import pandas as pd
 from nilearn._utils.niimg_conversions import check_same_fov
 from nilearn.image import resample_to_img
 from nimare.annotate.gclda import GCLDAModel
@@ -20,7 +21,9 @@ def main():
     project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
-    voc_dir = op.join(data_dir, "vocabulary")
+    reduced = True
+    voc_fn = "vocabulary_reduced" if reduced else "vocabulary"
+    voc_dir = op.join(data_dir, voc_fn)
     results_dir = op.join(project_dir, "results")
     sections = ["body"]
     # sections = ["abstract", "body"]
@@ -44,10 +47,14 @@ def main():
 
     dset = Dataset.load(op.join(data_dir, "dset-pubmed_annotated_nimare.pkl"))
 
+    reduced_tasks_fn = op.join(data_dir, "cognitive_atlas", "reduced_tasks.csv")
+    reduced_tasks_df = pd.read_csv(reduced_tasks_fn) if reduced else None
+
     cognitiveatlas = CognitiveAtlas(
         data_dir=data_dir,
         task_snapshot=op.join(data_dir, "cognitive_atlas", "task_snapshot-02-19-25.json"),
         concept_snapshot=op.join(data_dir, "cognitive_atlas", "concept_snapshot-02-19-25.json"),
+        reduced_tasks=reduced_tasks_df,
     )
 
     image_dir = op.join(data_dir, "hcp", "neurovault")
@@ -60,7 +67,7 @@ def main():
         plot_surf(
             img_fn,
             op.join(output_dir, f"{task_name}_map.png"),
-            vmax=30,
+            threshold_=None,
         )
 
         img = nib.load(img_fn)

@@ -89,27 +89,33 @@ def _annotate_dset(dset, vocabulary, data, prefix):
 def main(project_dir):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
-    voc_dir = op.join(data_dir, "vocabulary")
+    reduced = True
+    voc_fn = "vocabulary_reduced" if reduced else "vocabulary"
+    voc_dir = op.join(data_dir, voc_fn)
     source = "cogatlas"
     alpha = 0.5
-    categories = ["task", "concept"]
+    categories = ["task"]  # , "concept"
     sub_categories = ["names", "definitions", "combined"]
-    sections = ["abstract", "body"]
+    sections = ["body"]  # "abstract",
     os.makedirs(voc_dir, exist_ok=True)
 
     dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_nimare.pkl"))
+
+    reduced_tasks_fn = op.join(data_dir, "cognitive_atlas", "reduced_tasks.csv")
+    reduced_tasks_df = pd.read_csv(reduced_tasks_fn) if reduced else None
 
     cognitiveatlas = CognitiveAtlas(
         data_dir=data_dir,
         task_snapshot=op.join(data_dir, "cognitive_atlas", "task_snapshot-02-19-25.json"),
         concept_snapshot=op.join(data_dir, "cognitive_atlas", "concept_snapshot-02-19-25.json"),
+        reduced_tasks=reduced_tasks_df,
     )
 
     model_ids = [
         "BrainGPT/BrainGPT-7B-v0.2",
-        "mistralai/Mistral-7B-v0.1",
-        "BrainGPT/BrainGPT-7B-v0.1",
-        "meta-llama/Llama-2-7b-chat-hf",
+        # "mistralai/Mistral-7B-v0.1",
+        # "BrainGPT/BrainGPT-7B-v0.1",
+        # "meta-llama/Llama-2-7b-chat-hf",
     ]
     for model_id in model_ids:
         model_name = model_id.split("/")[-1]
