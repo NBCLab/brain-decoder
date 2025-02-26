@@ -2,6 +2,7 @@
 
 import os.path as op
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import ListedColormap
@@ -9,7 +10,7 @@ from matplotlib.gridspec import GridSpec
 from neuromaps import transforms
 from neuromaps.datasets import fetch_fslr
 from nilearn import datasets
-from nilearn.plotting import plot_stat_map
+from nilearn.plotting import plot_roi, plot_stat_map
 from nilearn.plotting.cm import _cmap_d as nilearn_cmaps
 from surfplot import Plot
 from surfplot.utils import threshold
@@ -17,6 +18,32 @@ from surfplot.utils import threshold
 from braindec.utils import _vol_to_surf, _zero_medial_wall
 
 CMAP = nilearn_cmaps["cold_hot"]
+
+
+def hex_to_rgb(hex_code):
+    """Convert hex color code to RGB tuple (0-1 scale)"""
+    hex_code = hex_code.lstrip("#")
+    return tuple(int(hex_code[i : i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def create_colormap_from_hex(hex_code, name="custom_cmap"):
+    """Create a matplotlib colormap from white to the specified hex color"""
+    # Convert hex to RGB (0-1 scale)
+    rgb = hex_to_rgb(hex_code)
+
+    # Create colormap using LinearSegmentedColormap
+    cmap = mcolors.LinearSegmentedColormap.from_list(
+        name, [(1, 1, 1), rgb], N=256  # From white to the specified color
+    )
+
+    return cmap
+
+
+def create_colormap_from_rgb(rgb):
+    """Create a matplotlib colormap from white to the specified hex color"""
+    # Normalize RGB values to [0, 1]
+    rgb = tuple(val / 255 for val in rgb)
+    return mcolors.ListedColormap([rgb])
 
 
 def _plot_training_history(
@@ -222,6 +249,61 @@ def plot_vol(
             alpha=alpha,
             cmap=cmap,
             threshold=threshold,
+            symmetric_cbar=True,
+            colorbar=colorbar,
+            display_mode=display_mode,
+            cut_coords=cut_coords,
+            vmax=vmax,
+            axes=ax,
+        )
+        if mask_contours:
+            display.add_contours(mask_contours, levels=[0.5], colors="black")
+
+    fig.savefig(out_file, bbox_inches="tight", dpi=300)
+
+
+def plot_vol_roi(
+    nii_img_thr,
+    out_file,
+    threshold=0.5,
+    mask_contours=None,
+    coords=None,
+    vmax=8,
+    alpha=1,
+    color=(0, 0, 0),
+):
+    template = datasets.load_mni152_template(resolution=1)
+
+    display_modes = ["x", "y", "z"]
+    fig = plt.figure(figsize=(5, 5))
+    fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=None)
+    gs = GridSpec(2, 2, figure=fig)
+
+    my_cmap = create_colormap_from_rgb(color)
+
+    for dsp_i, display_mode in enumerate(display_modes):
+        if display_mode == "z":
+            ax = fig.add_subplot(gs[:, 1], aspect="equal")
+            colorbar = False
+        else:
+            ax = fig.add_subplot(gs[dsp_i, 0], aspect="equal")
+            colorbar = False
+
+        if coords is not None:
+            cut_coords = [coords[dsp_i]]
+            if np.isnan(cut_coords):
+                cut_coords = 1
+        else:
+            cut_coords = 1
+
+        display = plot_stat_map(
+            nii_img_thr,
+            bg_img=template,
+            black_bg=False,
+            draw_cross=False,
+            annotate=True,
+            alpha=alpha,
+            cmap=my_cmap,
             symmetric_cbar=True,
             colorbar=colorbar,
             display_mode=display_mode,
