@@ -9,6 +9,16 @@ import pandas as pd
 
 from braindec.cogatlas import CognitiveAtlas
 
+IMG_TO_DOMAIN = {
+    "EMOTION": "emotion",
+    "GAMBLING": "gambling",
+    "LANGUAGE": "language",
+    "MOTOR": "motor",
+    "RELATIONAL": "relational",
+    "SOCIAL": "social",
+    "WM": "working memory",
+}
+
 
 def _recall_at_n(true_lb, pred_lb, n):
     if isinstance(true_lb, int):
@@ -22,27 +32,7 @@ def _recall_at_n(true_lb, pred_lb, n):
     return len(np.intersect1d(true_lb, pred_lb[:n])) / len(true_lb)
 
 
-def main():
-    project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
-    project_dir = op.abspath(project_dir)
-    data_dir = op.join(project_dir, "data")
-    results_dir = op.join(project_dir, "results")
-    sections = ["body"]
-    # sections = ["abstract", "body"]
-    voc_source = "cogatlas"
-    sub_categories = ["combined"]
-    # sub_categories = ["names", "definitions", "combined"]
-    categories = ["task"]  # ["task", "concept"]
-    model_ids = [
-        "BrainGPT/BrainGPT-7B-v0.2",
-        # "mistralai/Mistral-7B-v0.1",
-        # "BrainGPT/BrainGPT-7B-v0.1",
-        # "meta-llama/Llama-2-7b-chat-hf",
-    ]
-
-    output_dir = op.join(results_dir, "predictions_ibc")
-    os.makedirs(output_dir, exist_ok=True)
-
+def _get_cognitiveatlas(data_dir, reduced):
     concept_to_task_fn = op.join(data_dir, "cognitive_atlas", "concept_to_task.json")
     with open(concept_to_task_fn, "r") as file:
         concept_to_task = json.load(file)
@@ -51,78 +41,145 @@ def main():
     with open(concept_to_process_fn, "r") as file:
         concept_to_process = json.load(file)
 
+    reduced_tasks_fn = op.join(data_dir, "cognitive_atlas", "reduced_tasks.csv")
+    reduced_tasks_df = pd.read_csv(reduced_tasks_fn) if reduced else None
+
     cognitiveatlas = CognitiveAtlas(
         data_dir=data_dir,
         task_snapshot=op.join(data_dir, "cognitive_atlas", "task_snapshot-02-19-25.json"),
-        concept_snapshot=op.join(data_dir, "cognitive_atlas", "concept_snapshot-02-19-25.json"),
-        concept_to_task=concept_to_task,
+        concept_snapshot=op.join(
+            data_dir, "cognitive_atlas", "concept_extended_snapshot-02-19-25.json"
+        ),
+        reduced_tasks=reduced_tasks_df,
+        # concept_to_task=concept_to_task,
         concept_to_process=concept_to_process,
     )
 
-    image_dir = op.join(data_dir, "ibc")
-    images = sorted(glob(op.join(image_dir, "*.nii.gz")))[:15]
-    metadata = pd.read_csv(op.join(data_dir, "ibc", "metadata.csv"))
+    return cognitiveatlas
 
-    eval_results = []
-    for section, category, sub_category, model_id in itertools.product(
-        sections, categories, sub_categories, model_ids
+
+def main():
+    project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
+    project_dir = op.abspath(project_dir)
+    data_dir = op.join(project_dir, "data")
+
+    results_dir = op.join(project_dir, "results")
+    sections = ["body", "abstract"]
+    # sections = ["abstract", "body"]
+    sub_categories = ["combined", "names"]
+    # sub_categories = ["names", "definitions", "combined"]
+    categories = ["task"]  # ["task", "concept"]
+    model_ids = [
+        "BrainGPT/BrainGPT-7B-v0.2",
+        "mistralai/Mistral-7B-v0.1",
+        "BrainGPT/BrainGPT-7B-v0.1",
+        "meta-llama/Llama-2-7b-chat-hf",
+    ]
+    sources = ["cogatlasred", "cogatlas"]  # "cogatlas"
+    models = [
+        "neurosynth",
+        "gclda",
+        "brainclip",
+    ]
+
+    domains = [
+        "emotion",
+        "gambling",
+        "language",
+        "motor",
+        "relational",
+        "social",
+        "working memory",
+    ]
+    subdomains = ["task", "concept", "domain"]
+
+    output_dir = op.join(results_dir, "predictions_hcp_nv")
+    os.makedirs(output_dir, exist_ok=True)
+
+    image_dir = op.join(data_dir, "hcp", "neurovault")
+    images = sorted(glob(op.join(image_dir, "*.nii.gz")))
+
+    ground_truth_fn = op.join(data_dir, "ibc", "ground_truth.json")
+    with open(ground_truth_fn, "r") as file:
+        ground_truth = json.load(file)
+
+    results_dict = {
+        # "domain": [],
+        "model": [],
+        "task_gclda": [],
+        "task_neurosynth": [],
+        "task_brainclip": [],
+        "concept": [],
+        "process": [],
+    }
+    for section, model_id, source, category, sub_category in itertools.product(
+        sections, model_ids, sources, categories, sub_categories
     ):
         model_name = model_id.split("/")[-1]
+        reduced = True if source == "cogatlasred" else False
+        cognitiveatlas = _get_cognitiveatlas(data_dir, reduced)
 
-        vocabulary_lb = f"vocabulary-{voc_source}_{category}-{sub_category}_embedding-{model_name}_section-{section}"
-        task_recalls, concept_recalls, process_recalls = [], [], []
-        for _, img_fn in enumerate(images):
-            image_name = op.basename(img_fn).split(".")[0]
-            file_lb = f"{image_name}_{vocabulary_lb}"
-            print(f"Processing {image_name}")
+        vocabulary_lb = f"vocabulary-{source}_{category}-{sub_category}_embedding-{model_name}_section-{section}"
+        results_dict["model"].append(vocabulary_lb)
 
-            task_true = metadata.loc[metadata["file"] == image_name, "task"].values[0]
-            print(f"\tTrue task: {task_true}")
-            task_true_idx = cognitiveatlas.task_names.index(task_true)
-            concept_true_idx = cognitiveatlas.task_to_concept_idxs[task_true_idx]
-            process_true_idx = cognitiveatlas.task_to_process_idxs[task_true_idx]
+        for model in models:
+            # results_dict["model"].append(f"{vocabulary_lb}_{model}")
 
-            task_out_fn = f"{file_lb}_pred-task_brainclip.csv"
-            concept_out_fn = f"{file_lb}_pred-concept_brainclip.csv"
-            process_out_fn = f"{file_lb}_pred-process_brainclip.csv"
+            if model != "brainclip" and sub_category != "names":
+                results_dict[f"task_{model}"].append(np.nan)
+                continue
 
-            task_prob_df = pd.read_csv(op.join(output_dir, task_out_fn))
-            concept_prob_df = pd.read_csv(op.join(output_dir, concept_out_fn))
-            process_prob_df = pd.read_csv(op.join(output_dir, process_out_fn))
+            temp_results = {dom: {subdom: [] for subdom in subdomains} for dom in domains}
+            for _, img_fn in enumerate(images):
+                image_name = op.basename(img_fn).split(".")[0]
+                task_name = image_name.split("_")[1]
+                file_lb = f"{task_name}_{vocabulary_lb}"
 
-            task_pred = task_prob_df["pred"].values
-            task_pred_idx = cognitiveatlas.get_task_idx_from_names(task_pred)
-            concept_pred = concept_prob_df["pred"].values
-            concept_pred_idx = cognitiveatlas.get_concept_idx_from_names(concept_pred)
-            process_pred = process_prob_df["pred"].values
-            process_pred_idx = cognitiveatlas.get_process_idx_from_names(process_pred)
+                domain = IMG_TO_DOMAIN[task_name]
+                task_true = ground_truth[domain]["task"]
 
-            task_recalls.append(_recall_at_n(task_true_idx, task_pred_idx, 10))
-            concept_recalls.append(_recall_at_n(concept_true_idx, concept_pred_idx, 5))
-            process_recalls.append(_recall_at_n(process_true_idx, process_pred_idx, 2))
+                task_true_idx = cognitiveatlas.get_task_idx_from_names(task_true)
 
-        mean_task_recall = np.mean(task_recalls)
-        mean_concept_recall = np.mean(concept_recalls)
-        mean_process_recall = np.mean(process_recalls)
+                task_out_fn = f"{file_lb}_pred-task_{model}.csv"
+                task_prob_df = pd.read_csv(op.join(output_dir, task_out_fn))
+                task_pred = task_prob_df["pred"].values
+                task_pred = task_pred[:5]
+                task_pred_idx = cognitiveatlas.get_task_idx_from_names(task_pred)
+                task_recall = _recall_at_n(task_true_idx, task_pred_idx, 4)
+                temp_results[domain]["task"].append(task_recall)
 
-        std_task_recall = np.std(task_recalls)
-        std_concept_recall = np.std(concept_recalls)
-        std_process_recall = np.std(process_recalls)
+                if model == "brainclip":
+                    concept_out_fn = f"{file_lb}_pred-concept_{model}.csv"
+                    process_out_fn = f"{file_lb}_pred-process_{model}.csv"
 
-        results_dict = {
-            "model": vocabulary_lb,
-            "task_mean": mean_task_recall,
-            "task_std": std_task_recall,
-            "concept_mean": mean_concept_recall,
-            "concept_std": std_concept_recall,
-            "process_mean": mean_process_recall,
-            "process_std": std_process_recall,
-        }
-        eval_results.append(results_dict)
+                    concept_true = ground_truth[domain]["concept"]
+                    process_true = ground_truth[domain]["domain"]
+                    concept_true_idx = cognitiveatlas.get_concept_idx_from_names(concept_true)
+                    process_true_idx = cognitiveatlas.get_process_idx_from_names(process_true)
+
+                    concept_prob_df = pd.read_csv(op.join(output_dir, concept_out_fn))
+                    process_prob_df = pd.read_csv(op.join(output_dir, process_out_fn))
+                    concept_pred = concept_prob_df["pred"].values
+                    concept_pred_idx = cognitiveatlas.get_concept_idx_from_names(concept_pred)
+                    process_pred = process_prob_df["pred"].values
+                    process_pred_idx = cognitiveatlas.get_process_idx_from_names(process_pred)
+                    concept_recall = _recall_at_n(concept_true_idx, concept_pred_idx, 4)
+                    process_recalls = _recall_at_n(process_true_idx, process_pred_idx, 2)
+                    temp_results[domain]["concept"].append(concept_recall)
+                    temp_results[domain]["domain"].append(process_recalls)
+
+            mean_task_recalls = np.mean([temp_results[dom]["task"] for dom in domains])
+            results_dict[f"task_{model}"].append(mean_task_recalls)
+
+            if model == "brainclip":
+                mean_concept_recalls = np.mean([temp_results[dom]["concept"] for dom in domains])
+                mean_process_recalls = np.mean([temp_results[dom]["domain"] for dom in domains])
+                results_dict["concept"].append(mean_concept_recalls)
+                results_dict["process"].append(mean_process_recalls)
 
     # Export results to csv
-    results_df = pd.DataFrame(eval_results)
-    results_df.to_csv(op.join(results_dir, "eval-ibc_results.csv"), index=False)
+    results_df = pd.DataFrame(results_dict)
+    results_df.to_csv(op.join(results_dir, "eval-hcp-group_results.csv"), index=False)
 
 
 if __name__ == "__main__":
