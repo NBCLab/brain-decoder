@@ -22,12 +22,11 @@ def main():
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     reduced = True
-    voc_fn = "vocabulary_reduced" if reduced else "vocabulary"
-    voc_dir = op.join(data_dir, voc_fn)
+    voc_dir = op.join(data_dir, "vocabulary")
+    source = "cogatlasred" if reduced else "cogatlas"
     results_dir = op.join(project_dir, "results")
     sections = ["body"]
     # sections = ["abstract", "body"]
-    voc_source = "cogatlas"
     sub_categories = ["combined"]
     # sub_categories = ["names", "definitions", "combined"]
     categories = ["task"]  # ["task", "concept"]
@@ -45,7 +44,7 @@ def main():
     output_dir = op.join(results_dir, "predictions_ibc")
     os.makedirs(output_dir, exist_ok=True)
 
-    dset = Dataset.load(op.join(data_dir, "dset-pubmed_annotated_nimare.pkl"))
+    dset = Dataset.load(op.join(data_dir, f"dset-pubmed_{source}-annotated_nimare.pkl"))
 
     reduced_tasks_fn = op.join(data_dir, "cognitive_atlas", "reduced_tasks.csv")
     reduced_tasks_df = pd.read_csv(reduced_tasks_fn) if reduced else None
@@ -53,19 +52,22 @@ def main():
     cognitiveatlas = CognitiveAtlas(
         data_dir=data_dir,
         task_snapshot=op.join(data_dir, "cognitive_atlas", "task_snapshot-02-19-25.json"),
-        concept_snapshot=op.join(data_dir, "cognitive_atlas", "concept_snapshot-02-19-25.json"),
+        concept_snapshot=op.join(
+            data_dir, "cognitive_atlas", "concept_extended_snapshot-02-19-25.json"
+        ),
         reduced_tasks=reduced_tasks_df,
     )
 
     image_dir = op.join(data_dir, "ibc")
-    images = sorted(glob(op.join(image_dir, "*.nii.gz")))[:10]
+    images = sorted(glob(op.join(image_dir, "*.nii.gz")))  # [:10]
 
     for _, img_fn in enumerate(images):
         image_name = op.basename(img_fn).split(".")[0]
+        task_name = image_name.split("_")[0]
         # Plot map for debugging
         plot_surf(
             img_fn,
-            op.join(output_dir, f"{image_name}_map.png"),
+            op.join(output_dir, f"{task_name}_map.png"),
             vmax=None,
         )
 
@@ -82,10 +84,8 @@ def main():
                 "pubmed",
                 f"model-clip_section-{section}_embedding-{model_name}_best.pth",
             )
-            vocabulary_lb = (
-                f"vocabulary-{voc_source}_{category}-{sub_category}_embedding-{model_name}"
-            )
-            vocabulary_fn = op.join(voc_dir, f"vocabulary-{voc_source}_{category}.txt")
+            vocabulary_lb = f"vocabulary-{source}_{category}-{sub_category}_embedding-{model_name}"
+            vocabulary_fn = op.join(voc_dir, f"vocabulary-{source}_{category}.txt")
             vocabulary_emb_fn = op.join(voc_dir, f"{vocabulary_lb}.npy")
             vocabulary_prior_fn = op.join(voc_dir, f"{vocabulary_lb}_section-{section}_prior.npy")
             vocabulary, vocabulary_emb, vocabulary_prior = _read_vocabulary(
@@ -94,12 +94,12 @@ def main():
                 vocabulary_prior_fn,
             )
 
-            task_out_fn = f"{image_name}_{vocabulary_lb}_section-{section}_pred-task_brainclip.csv"
+            task_out_fn = f"{task_name}_{vocabulary_lb}_section-{section}_pred-task_brainclip.csv"
             concept_out_fn = (
-                f"{image_name}_{vocabulary_lb}_section-{section}_pred-concept_brainclip.csv"
+                f"{task_name}_{vocabulary_lb}_section-{section}_pred-concept_brainclip.csv"
             )
             process_out_fn = (
-                f"{image_name}_{vocabulary_lb}_section-{section}_pred-process_brainclip.csv"
+                f"{task_name}_{vocabulary_lb}_section-{section}_pred-process_brainclip.csv"
             )
 
             task_prob_df, concept_prob_df, process_prob_df = image_to_labels(

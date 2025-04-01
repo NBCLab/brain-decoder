@@ -55,7 +55,9 @@ def main():
     cognitiveatlas = CognitiveAtlas(
         data_dir=data_dir,
         task_snapshot=op.join(data_dir, "cognitive_atlas", "task_snapshot-02-19-25.json"),
-        concept_snapshot=op.join(data_dir, "cognitive_atlas", "concept_snapshot-02-19-25.json"),
+        concept_snapshot=op.join(
+            data_dir, "cognitive_atlas", "concept_extended_snapshot-02-19-25.json"
+        ),
         reduced_tasks=reduced_tasks_df,
     )
 
