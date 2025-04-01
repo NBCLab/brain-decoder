@@ -87,6 +87,14 @@ class CognitiveAtlas:
             task_to_keep = reduced_tasks["task"].to_list()
             self.task_df = self.task_df.loc[self.task_df["name"].isin(task_to_keep)]
 
+            """
+            # Drops tasks with short definitions
+            self.task_df = self.task_df.loc[self.task_df["definition_text"].str.len() > 90]
+            reduced_tasks = reduced_tasks.loc[
+                reduced_tasks["task"].isin(self.task_df["name"])
+            ].reset_index(drop=True)
+            """
+
         self.task_ids = self.task_df["id"].to_list()
         self.task_names = self.task_df["name"].to_list()
         self.task_definitions = self.task_df["definition_text"].to_list()
@@ -188,14 +196,27 @@ class CognitiveAtlas:
 
         return [self.task_ids[self.task_names.index(name)] for name in names]
 
-    def get_task_idx_from_names(self, task_names):
-        return np.where(np.in1d(self.task_names, task_names))[0]
+    def get_task_idx_from_names(self, names):
+        if isinstance(names, str):
+            return np.where(np.in1d(self.task_names, names))[0][0]
 
-    def get_concept_idx_from_names(self, concept_names):
-        return np.where(np.in1d(self.concept_names, concept_names))[0]
+        return [np.where(np.in1d(self.task_names, task_name))[0][0] for task_name in names]
 
-    def get_process_idx_from_names(self, process_names):
-        return np.where(np.in1d(self.process_names, process_names))[0]
+    def get_concept_idx_from_names(self, names):
+        if isinstance(names, str):
+            return np.where(np.in1d(self.concept_names, names))[0][0]
+
+        return [
+            np.where(np.in1d(self.concept_names, concept_name))[0][0] for concept_name in names
+        ]
+
+    def get_process_idx_from_names(self, names):
+        if isinstance(names, str):
+            return np.where(np.in1d(self.process_names, names))[0][0]
+
+        return [
+            np.where(np.in1d(self.process_names, process_name))[0][0] for process_name in names
+        ]
 
     def get_task_names_from_idx(self, task_idx):
         return np.array(self.task_names)[task_idx]
