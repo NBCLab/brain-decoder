@@ -3,10 +3,10 @@ import itertools
 import os
 import os.path as op
 
-import nimare
 import numpy as np
 from nimare import decode
 from nimare.annotate.gclda import GCLDAModel
+from nimare.dataset import Dataset
 from nimare.meta.cbma.mkda import MKDAChi2
 
 
@@ -42,6 +42,12 @@ def _get_parser():
         default="BrainGPT/BrainGPT-7B-v0.2",
         help="Model to selecte indices of the training set",
     )
+    parser.add_argument(
+        "--reduced",
+        dest="reduced",
+        default=True,
+        help="Use reduced vocabulary",
+    )
     return parser
 
 
@@ -70,18 +76,19 @@ def main(
     section="body",
     baseline="gclda",
     model_id="BrainGPT/BrainGPT-7B-v0.2",
+    reduced=False,
 ):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
     results_dir = op.join(project_dir, "results", "baseline")
     braindec_dir = op.join(project_dir, "results", "pubmed")
-    source = "cogatlas"
+    source = "cogatlasred" if reduced else "cogatlas"
 
     model_name = model_id.split("/")[-1]
     os.makedirs(results_dir, exist_ok=True)
     n_cores = -1
 
-    dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_annotated_nimare.pkl"))
+    dset = Dataset.load(op.join(data_dir, f"dset-pubmed_{source}-annotated_nimare.pkl"))
     indices_fn = op.join(
         braindec_dir,
         f"model-clip_section-{section}_embedding-{model_name}_best-indices.npz",
@@ -119,7 +126,7 @@ def main(
             counts_df,
             dset.coordinates,
             mask=dset.masker.mask_img,
-            n_topics=50,
+            n_topics=25,
             n_regions=4,
             symmetric=True,
         )
@@ -135,15 +142,16 @@ def _main(argv=None):
     kwargs = vars(option)
     # main(**kwargs)
 
-    categories = ["task", "concept"]
+    reduced = False
+    categories = ["task"]  # "concept"
     model_ids = [
         "BrainGPT/BrainGPT-7B-v0.2",
         "mistralai/Mistral-7B-v0.1",
         "BrainGPT/BrainGPT-7B-v0.1",
         "meta-llama/Llama-2-7b-chat-hf",
     ]
-    sections = ["abstract", "body"]
-    baselines = ["gclda"]  # "gclda"
+    sections = ["body", "abstract"]  # "body", "abstract"
+    baselines = ["neurosynth", "gclda"]  # "neurosynth", "gclda"
     for category, section, baseline, model_id in itertools.product(
         categories, sections, baselines, model_ids
     ):
@@ -154,6 +162,7 @@ def _main(argv=None):
             section=section,
             baseline=baseline,
             model_id=model_id,
+            reduced=reduced,
         )
 
 
