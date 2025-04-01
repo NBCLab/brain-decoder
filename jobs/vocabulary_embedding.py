@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import os.path as op
 
@@ -89,17 +90,20 @@ def _annotate_dset(dset, vocabulary, data, prefix):
 def main(project_dir):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
-    reduced = True
-    voc_fn = "vocabulary_reduced" if reduced else "vocabulary"
-    voc_dir = op.join(data_dir, voc_fn)
-    source = "cogatlas"
+    reduced = False
+    voc_dir = op.join(data_dir, "vocabulary")
+    source = "cogatlasred" if reduced else "cogatlas"
     alpha = 0.5
     categories = ["task"]  # , "concept"
     sub_categories = ["names", "definitions", "combined"]
-    sections = ["body"]  # "abstract",
+    sections = ["body", "abstract"]
     os.makedirs(voc_dir, exist_ok=True)
 
     dset = nimare.dataset.Dataset.load(op.join(data_dir, "dset-pubmed_nimare.pkl"))
+
+    concept_to_process_fn = op.join(data_dir, "cognitive_atlas", "concept_to_process.json")
+    with open(concept_to_process_fn, "r") as file:
+        concept_to_process = json.load(file)
 
     reduced_tasks_fn = op.join(data_dir, "cognitive_atlas", "reduced_tasks.csv")
     reduced_tasks_df = pd.read_csv(reduced_tasks_fn) if reduced else None
@@ -107,15 +111,18 @@ def main(project_dir):
     cognitiveatlas = CognitiveAtlas(
         data_dir=data_dir,
         task_snapshot=op.join(data_dir, "cognitive_atlas", "task_snapshot-02-19-25.json"),
-        concept_snapshot=op.join(data_dir, "cognitive_atlas", "concept_snapshot-02-19-25.json"),
+        concept_snapshot=op.join(
+            data_dir, "cognitive_atlas", "concept_extended_snapshot-02-19-25.json"
+        ),
+        concept_to_process=concept_to_process,
         reduced_tasks=reduced_tasks_df,
     )
 
     model_ids = [
         "BrainGPT/BrainGPT-7B-v0.2",
-        # "mistralai/Mistral-7B-v0.1",
-        # "BrainGPT/BrainGPT-7B-v0.1",
-        # "meta-llama/Llama-2-7b-chat-hf",
+        "mistralai/Mistral-7B-v0.1",
+        "BrainGPT/BrainGPT-7B-v0.1",
+        "meta-llama/Llama-2-7b-chat-hf",
     ]
     for model_id in model_ids:
         model_name = model_id.split("/")[-1]
@@ -160,7 +167,7 @@ def main(project_dir):
                         prefix = f"{source}-{category}_section-{section}_annot-{data_lb}"
                         dset = _annotate_dset(dset, names, data.T, prefix)
 
-                dset.save(op.join(data_dir, "dset-pubmed_annotated_nimare.pkl"))
+                dset.save(op.join(data_dir, f"dset-pubmed_{source}-annotated_nimare.pkl"))
 
 
 def _main(argv=None):

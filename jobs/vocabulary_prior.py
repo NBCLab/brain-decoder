@@ -31,23 +31,22 @@ def _get_prior_prob_old(doc_emb, emb, temperature=10, n_top_docs=10):
 def main(project_dir):
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
-    reduced = True
-    voc_fn = "vocabulary_reduced" if reduced else "vocabulary"
-    voc_dir = op.join(data_dir, voc_fn)
+    reduced = False
+    voc_dir = op.join(data_dir, "vocabulary")
+    source = "cogatlasred" if reduced else "cogatlas"
     text_dir = op.join(data_dir, "text")
     braindec_dir = op.join(project_dir, "results", "pubmed")
-    source = "cogatlas"
-    categories = ["task"]  # , "concept"
+    categories = ["task"]  # "concept"
     sub_categories = ["names", "definitions", "combined"]
     n_top_docs = 10
 
     model_ids = [
         "BrainGPT/BrainGPT-7B-v0.2",
-        # "mistralai/Mistral-7B-v0.1",
-        # "BrainGPT/BrainGPT-7B-v0.1",
-        # "meta-llama/Llama-2-7b-chat-hf",
+        "mistralai/Mistral-7B-v0.1",
+        "BrainGPT/BrainGPT-7B-v0.1",
+        "meta-llama/Llama-2-7b-chat-hf",
     ]
-    sections = ["body"]  # "abstract",
+    sections = ["body", "abstract"]
     for section, model_id in itertools.product(sections, model_ids):
         model_name = model_id.split("/")[-1]
 
