@@ -150,8 +150,8 @@ def _main(argv=None):
         "BrainGPT/BrainGPT-7B-v0.1",
         "meta-llama/Llama-2-7b-chat-hf",
     ]
-    sections = ["body", "abstract"]  # "body", "abstract"
-    baselines = ["neurosynth", "gclda"]  # "neurosynth", "gclda"
+    sections = ["body", "abstract"]
+    baselines = ["neurosynth", "gclda"]
     for category, section, baseline, model_id in itertools.product(
         categories, sections, baselines, model_ids
     ):
