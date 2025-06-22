@@ -141,7 +141,6 @@ def _get_data_loader(emb_x, emb_y, batch_size, shuffle=False):
 
 # Main training loop
 def main(project_dir, section="abstract", model_id="mistralai/Mistral-7B-v0.1", device=None):
-    project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
     data_dir = op.join(project_dir, "data")
     results_dir = op.join(project_dir, "results")
     output_dir = op.join(results_dir, "pubmed")
