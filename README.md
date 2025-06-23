@@ -55,6 +55,22 @@ Alternatively, you can use the pre-trained model provided in the `./results/pubm
 
 To perform predictions using the trained model, you can use the [predict.py](./braindec/predict.py) script.
 
+basic usage:
+
+```bash
+python ./braindec/predict.py \
+    --image /path/to/image.nii.gz \
+    --model /path/to/model.pt \
+    --vocabulary /path/to/vocabulary.txt \
+    --vocabulary_emb /path/to/vocabulary_emb.npy \
+    --vocabulary_prior /path/to/vocabulary_prior.npy \
+    --mask /path/to/mask.nii.gz \
+    --topk 10 \
+    --logit_scale 10.0 \
+    --device cuda:0 \
+    --output /path/to/output
+```
+
 ## Citation
 
 If you use this code in your research, please acknowledge this work by citing the

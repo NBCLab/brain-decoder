@@ -1,16 +1,18 @@
 """Predicts the output of the model on the test data."""
 
+import argparse
 import os.path as op
 
+import nibabel as nib
 import numpy as np
 import pandas as pd
 import torch
-from nilearn.image import load_img
-from scipy.special import expit, softmax
+from nilearn._utils.niimg_conversions import check_same_fov
+from nilearn.image import load_img, resample_to_img
 
 from braindec.embedding import ImageEmbedding
 from braindec.model import build_model
-from braindec.utils import _get_device, get_data_dir
+from braindec.utils import _get_device, _read_vocabulary, get_data_dir
 
 
 def preprocess_image(image, standardize=False, data_dir=None, space="MNI152", density=None):
@@ -173,3 +175,116 @@ def image_to_labels_hierarchical(
         }
     )
     return task_prob_df, concept_prob_df, process_prob_df
+
+
+def _get_parser():
+    parser = argparse.ArgumentParser(description="Run gradient-decoding workflow")
+    parser.add_argument(
+        "--image",
+        dest="image",
+        required=True,
+        help="Path to image file (e.g., NIfTI format).",
+    )
+    parser.add_argument(
+        "--model",
+        dest="model",
+        required=True,
+        help="Path to the pre-trained CLIP model.",
+    )
+    parser.add_argument(
+        "--vocabulary",
+        dest="vocabulary",
+        required=True,
+        help="Path to the vocabulary file.",
+    )
+    parser.add_argument(
+        "--vocabulary_emb",
+        dest="vocabulary_emb",
+        required=True,
+        help="Path to the vocabulary embedding file.",
+    )
+    parser.add_argument(
+        "--vocabulary_prior",
+        dest="vocabulary_prior",
+        required=True,
+        help="Path to the vocabulary prior file.",
+    )
+    parser.add_argument(
+        "--mask",
+        dest="mask",
+        required=True,
+        help="Path to the mask file.",
+    )
+    parser.add_argument(
+        "--topk",
+        dest="topk",
+        type=int,
+        default=10,
+        help="Number of top predictions to return (default: 10).",
+    )
+    parser.add_argument(
+        "--logit_scale",
+        dest="logit_scale",
+        type=float,
+        default=10.0,
+        help="Logit scale for temperature scaling (default: None).",
+    )
+    parser.add_argument(
+        "--device",
+        dest="device",
+        default=None,
+        help="Device to use for computation (default: None). Possible values: cpu, mps, cuda.",
+    )
+    parser.add_argument(
+        "--output",
+        dest="output_dir",
+        required=False,
+        help="Path to the output directory. Defaults to the same directory as the input image.",
+    )
+    return parser
+
+
+def _main(argv=None):
+    option = _get_parser().parse_args(argv)
+    image_fn = option.image
+    model_fn = option.model
+    vocabulary_fn = option.vocabulary
+    vocabulary_emb_fn = option.vocabulary_emb
+    vocabulary_prior_fn = option.vocabulary_prior
+    topk = option.topk
+    logit_scale = option.logit_scale
+    device = option.device
+    mask_fn = option.mask
+    output_dir = option.output_dir
+
+    output_dir = op.dirname(image_fn) if output_dir is None else op.abspath(output_dir)
+    image_name = op.splitext(op.basename(image_fn))[0]
+
+    img = nib.load(image_fn)
+    mask_img = nib.load(mask_fn)
+    if not check_same_fov(img, reference_masker=mask_img):
+        img = resample_to_img(img, mask_img)
+
+    vocabulary, vocabulary_emb, vocabulary_prior = _read_vocabulary(
+        vocabulary_fn,
+        vocabulary_emb_fn,
+        vocabulary_prior_fn,
+    )
+
+    prob_df = image_to_labels(
+        img,
+        model_fn,
+        vocabulary,
+        vocabulary_emb,
+        vocabulary_prior,
+        topk=topk,
+        logit_scale=logit_scale,
+        return_posterior_probability=False,
+        device=device,
+    )
+
+    prob_df.to_csv(op.join(output_dir, f"{image_name}_predictions.csv"), index=False)
+
+
+if __name__ == "__main__":
+    _main()
