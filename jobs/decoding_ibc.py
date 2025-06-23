@@ -14,7 +14,7 @@ from utils import _read_vocabulary
 
 from braindec.cogatlas import CognitiveAtlas
 from braindec.plot import plot_surf
-from braindec.predict import image_to_labels
+from braindec.predict import image_to_labels_hierarchical
 
 
 def main():
@@ -25,20 +25,18 @@ def main():
     voc_dir = op.join(data_dir, "vocabulary")
     source = "cogatlasred" if reduced else "cogatlas"
     results_dir = op.join(project_dir, "results")
-    sections = ["body"]
-    # sections = ["abstract", "body"]
+    sections = ["abstract", "body"]
     sub_categories = ["combined"]
-    # sub_categories = ["names", "definitions", "combined"]
-    categories = ["task"]  # ["task", "concept"]
+    categories = ["task"]
     model_ids = [
         "BrainGPT/BrainGPT-7B-v0.2",
-        # "mistralai/Mistral-7B-v0.1",
-        # "BrainGPT/BrainGPT-7B-v0.1",
-        # "meta-llama/Llama-2-7b-chat-hf",
+        "mistralai/Mistral-7B-v0.1",
+        "BrainGPT/BrainGPT-7B-v0.1",
+        "meta-llama/Llama-2-7b-chat-hf",
     ]
-    topk = 20  # top k predictions
+    topk = 20
     standardize = False
-    logit_scale = 20  # None
+    logit_scale = 20
     device = "mps"
 
     output_dir = op.join(results_dir, "predictions_ibc")
@@ -94,15 +92,12 @@ def main():
                 vocabulary_prior_fn,
             )
 
-            task_out_fn = f"{task_name}_{vocabulary_lb}_section-{section}_pred-task_brainclip.csv"
-            concept_out_fn = (
-                f"{task_name}_{vocabulary_lb}_section-{section}_pred-concept_brainclip.csv"
-            )
-            process_out_fn = (
-                f"{task_name}_{vocabulary_lb}_section-{section}_pred-process_brainclip.csv"
-            )
+            file_base_name = f"{task_name}_{vocabulary_lb}_section-{section}"
+            task_out_fn = f"{file_base_name}_pred-task_brainclip.csv"
+            concept_out_fn = f"{file_base_name}_pred-concept_brainclip.csv"
+            process_out_fn = f"{file_base_name}_pred-process_brainclip.csv"
 
-            task_prob_df, concept_prob_df, process_prob_df = image_to_labels(
+            task_prob_df, concept_prob_df, process_prob_df = image_to_labels_hierarchical(
                 img,
                 model_path,
                 vocabulary,
@@ -121,42 +116,48 @@ def main():
             task_prob_df.to_csv(op.join(output_dir, task_out_fn), index=False)
             concept_prob_df.to_csv(op.join(output_dir, concept_out_fn), index=False)
             process_prob_df.to_csv(op.join(output_dir, process_out_fn), index=False)
-            """
-            # Baseline
-            # --------------------------------------------------------------------
-            ns_out_fn = f"{image_name}_vocabulary-{voc_source}_{category}-names_embedding-{model_name}_section-{section}_neurosynth.csv"
-            gclda_out_fn = f"{image_name}_vocabulary-{voc_source}_{category}-names_embedding-{model_name}_section-{section}_gclda.csv"
 
-            # Load baseline model
-            ns_model_fn = op.join(
-                results_dir,
-                "baseline",
-                f"model-neurosynth_{voc_source}-{category}_embedding-{model_name}_section-{section}.pkl",
-            )
-            gclda_model_fn = op.join(
-                results_dir,
-                "baseline",
-                f"model-gclda_{voc_source}-{category}_embedding-{model_name}_section-{section}.pkl",
-            )
-            
-            gclda_model = GCLDAModel.load(gclda_model_fn)
-            gclda_predictions_df, _ = gclda_decode_map(gclda_model, img)
-            gclda_predictions_df = gclda_predictions_df.sort_values(
-                by="Weight", ascending=False
-            ).head(topk)
-            gclda_predictions_df.to_csv(op.join(output_dir, gclda_out_fn), index=True)
-            
+            if sub_category == "names":
+                baseline_label = f"{source}-{category}_embedding-{model_name}_section-{section}"
+                # Baseline
+                # --------------------------------------------------------------------
+                ns_out_fn = f"{file_base_name}_pred-task_neurosynth.csv"
+                gclda_out_fn = f"{file_base_name}_pred-task_gclda.csv"
 
-            ns_decoder = CorrelationDecoder.load(ns_model_fn)
-            ns_predictions_df = ns_decoder.transform(img)
-            feature_group = f"{voc_source}-{category}_section-{section}_annot-tfidf__"
-            feature_names = ns_predictions_df.index.values
-            vocabulary_names = [f.replace(feature_group, "") for f in feature_names]
-            ns_predictions_df.index = vocabulary_names
+                # Load baseline model
+                ns_model_fn = op.join(
+                    results_dir,
+                    "baseline",
+                    f"model-neurosynth_{baseline_label}.pkl",
+                )
+                gclda_model_fn = op.join(
+                    results_dir,
+                    "baseline",
+                    f"model-gclda_{baseline_label}.pkl",
+                )
 
-            ns_predictions_df = ns_predictions_df.sort_values(by="r", ascending=False).head(topk)
-            ns_predictions_df.to_csv(op.join(output_dir, ns_out_fn), index=True)
-            """
+                gclda_model = GCLDAModel.load(gclda_model_fn)
+                gclda_predictions_df, _ = gclda_decode_map(gclda_model, img)
+                gclda_predictions_df = gclda_predictions_df.sort_values(
+                    by="Weight", ascending=False
+                ).head(topk)
+                gclda_predictions_df = gclda_predictions_df.reset_index()
+                gclda_predictions_df.columns = ["pred", "weight"]
+                gclda_predictions_df.to_csv(op.join(output_dir, gclda_out_fn), index=False)
+
+                ns_decoder = CorrelationDecoder.load(ns_model_fn)
+                ns_predictions_df = ns_decoder.transform(img)
+                feature_group = f"{source}-{category}_section-{section}_annot-tfidf__"
+                feature_names = ns_predictions_df.index.values
+                vocabulary_names = [f.replace(feature_group, "") for f in feature_names]
+                ns_predictions_df.index = vocabulary_names
+
+                ns_predictions_df = ns_predictions_df.sort_values(by="r", ascending=False).head(
+                    topk
+                )
+                ns_predictions_df = ns_predictions_df.reset_index()
+                ns_predictions_df.columns = ["pred", "corr"]
+                ns_predictions_df.to_csv(op.join(output_dir, ns_out_fn), index=False)
 
 
 if __name__ == "__main__":

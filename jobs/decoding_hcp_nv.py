@@ -14,31 +14,29 @@ from utils import _read_vocabulary
 
 from braindec.cogatlas import CognitiveAtlas
 from braindec.plot import plot_surf
-from braindec.predict import image_to_labels
+from braindec.predict import image_to_labels_hierarchical
 
 
 def main():
     project_dir = "/Users/julioaperaza/Documents/GitHub/brain-decoder"
     project_dir = op.abspath(project_dir)
     data_dir = op.join(project_dir, "data")
-    reduced = False
+    reduced = True
     voc_dir = op.join(data_dir, "vocabulary")
     source = "cogatlasred" if reduced else "cogatlas"
     results_dir = op.join(project_dir, "results")
     sections = ["abstract", "body"]
-    # sections = ["abstract", "body"]
-    sub_categories = ["names", "combined"]
-    # sub_categories = ["names", "definitions", "combined"]
-    categories = ["task"]  # ["task", "concept"]
+    sub_categories = ["combined"]
+    categories = ["task"]
     model_ids = [
         "BrainGPT/BrainGPT-7B-v0.2",
         "mistralai/Mistral-7B-v0.1",
         "BrainGPT/BrainGPT-7B-v0.1",
         "meta-llama/Llama-2-7b-chat-hf",
     ]
-    topk = 20  # top k predictions
+    topk = 20
     standardize = False
-    logit_scale = 20  # None
+    logit_scale = 20
     device = "mps"
 
     output_dir = op.join(results_dir, "predictions_hcp_nv")
@@ -100,7 +98,7 @@ def main():
             concept_out_fn = f"{file_base_name}_pred-concept_brainclip.csv"
             process_out_fn = f"{file_base_name}_pred-process_brainclip.csv"
 
-            task_prob_df, concept_prob_df, process_prob_df = image_to_labels(
+            task_prob_df, concept_prob_df, process_prob_df = image_to_labels_hierarchical(
                 img,
                 model_path,
                 vocabulary,

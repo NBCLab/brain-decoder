@@ -2,6 +2,7 @@
 /data
 /results
 /jobs/log
+/jobs/scratch
 /figures
 
 # VS Code
