@@ -55,12 +55,12 @@ Alternatively, you can use the pre-trained model provided in the `./results/pubm
 
 To perform predictions using the trained model, you can use the [predict.py](./braindec/predict.py) script.
 
-basic usage:
+Basic usage:
 
 ```bash
 python ./braindec/predict.py \
     --image /path/to/image.nii.gz \
-    --model /path/to/model.pt \
+    --model /path/to/model.pth \
     --vocabulary /path/to/vocabulary.txt \
     --vocabulary_emb /path/to/vocabulary_emb.npy \
     --vocabulary_prior /path/to/vocabulary_prior.npy \
@@ -70,6 +70,14 @@ python ./braindec/predict.py \
     --device cuda:0 \
     --output /path/to/output
 ```
+
+Example data:
+
+Model: [model-clip_section-body_embedding-BrainGPT-7B-v0.2_best.pth](https://osf.io/u3cxh)
+Vocabulary: [vocabulary-cogatlasred_task.txt](https://osf.io/8m2fz)
+Vocabulary embeddings: [vocabulary-cogatlasred_task-combined_embedding-BrainGPT-7B-v0.2.npy](https://osf.io/nza7b)
+Vocabulary prior: [vocabulary-cogatlasred_task-combined_embedding-BrainGPT-7B-v0.2_section-body_prior.npy](https://osf.io/v82za)
+Mask: [MNI152_2x2x2_brainmask.nii.gz](https://osf.io/jzvry)
 
 ## Citation
 
