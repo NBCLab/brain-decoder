@@ -73,11 +73,15 @@ python ./braindec/predict.py \
 
 Example data:
 
-Model: [model-clip_section-body_embedding-BrainGPT-7B-v0.2_best.pth](https://osf.io/u3cxh)
-Vocabulary: [vocabulary-cogatlasred_task.txt](https://osf.io/8m2fz)
-Vocabulary embeddings: [vocabulary-cogatlasred_task-combined_embedding-BrainGPT-7B-v0.2.npy](https://osf.io/nza7b)
-Vocabulary prior: [vocabulary-cogatlasred_task-combined_embedding-BrainGPT-7B-v0.2_section-body_prior.npy](https://osf.io/v82za)
-Mask: [MNI152_2x2x2_brainmask.nii.gz](https://osf.io/jzvry)
+- Model: [model-clip_section-body_embedding-BrainGPT-7B-v0.2_best.pth](https://osf.io/u3cxh)
+
+- Vocabulary: [vocabulary-cogatlasred_task.txt](https://osf.io/8m2fz)
+
+- Vocabulary embeddings: [vocabulary-cogatlasred_task-combined_embedding-BrainGPT-7B-v0.2.npy](https://osf.io/nza7b)
+
+- Vocabulary prior: [vocabulary-cogatlasred_task-combined_embedding-BrainGPT-7B-v0.2_section-body_prior.npy](https://osf.io/v82za)
+
+- Mask: [MNI152_2x2x2_brainmask.nii.gz](https://osf.io/jzvry)
 
 ## Citation
 
