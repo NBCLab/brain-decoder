@@ -53,7 +53,7 @@ Alternatively, you can use the pre-trained model provided in the `./results/pubm
 
 ### Predictions
 
-To perform predictions using the trained model, you can use the [predict.py](./jobs/predict.py) script.
+To perform predictions using the trained model, you can use the [predict.py](./braindec/predict.py) script.
 
 ## Citation
 

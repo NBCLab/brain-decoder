@@ -13,7 +13,7 @@ from nimare.utils import get_resource_path
 from utils import _read_vocabulary
 
 from braindec.plot import plot_surf
-from braindec.predict import image_to_labels
+from braindec.predict import image_to_labels_hierarchical
 from braindec.utils import _zero_medial_wall
 
 # TASKS = ["WM", "GAMBLING", "MOTOR", "LANGUAGE", "SOCIAL", "RELATIONAL", "EMOTION"]
@@ -108,7 +108,7 @@ def main():
                     vocabulary_prior_fn,
                 )
 
-                predictions_df = image_to_labels(
+                predictions_df = image_to_labels_hierarchical(
                     image,
                     model_path,
                     vocabulary,

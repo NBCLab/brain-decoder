@@ -7,7 +7,7 @@ from nimare.utils import get_resource_path
 from utils import _read_vocabulary
 
 from braindec.plot import plot_surf
-from braindec.predict import image_to_labels
+from braindec.predict import image_to_labels_hierarchical
 from braindec.utils import _vol_surfimg
 
 
@@ -76,7 +76,7 @@ def main():
                 vocabulary_prior_fn,
             )
 
-            predictions_df = image_to_labels(
+            predictions_df = image_to_labels_hierarchical(
                 img_surf,
                 model_path,
                 vocabulary,

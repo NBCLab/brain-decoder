@@ -7,7 +7,7 @@ from nimare.utils import get_resource_path
 from utils import _read_vocabulary
 
 from braindec.plot import plot_surf
-from braindec.predict import image_to_labels
+from braindec.predict import image_to_labels_hierarchical
 
 
 def main():
@@ -72,7 +72,7 @@ def main():
             ns_out_fn = f"vocabulary-{voc_source}_{category}-names_embedding-{model_name}_section-{section}_neurosynth.csv"
             gclda_out_fn = f"vocabulary-{voc_source}_{category}-names_embedding-{model_name}_section-{section}_gclda.csv"
 
-            predictions_df = image_to_labels(
+            predictions_df = image_to_labels_hierarchical(
                 img,
                 model_path,
                 vocabulary,

@@ -39,24 +39,13 @@ def image_to_labels(
     vocabulary,
     vocabulary_emb,
     prior_probability,
-    concept_to_task_idxs,
-    process_to_concept_idxs,
-    concept_names,
-    process_names,
     topk=10,
     logit_scale=None,
+    return_posterior_probability=False,
     device=None,
     **kwargs,
 ):
-    """
-    Predict the label of an image.
-
-    Args:
-        image: Images
-
-    Returns:
-        Predicted label
-    """
+    """Predict the labels of an image using a pre-trained model."""
     if device is None:
         device = _get_device()
 
@@ -74,8 +63,6 @@ def image_to_labels(
     # Calculate features
     model = build_model(model_path, device=device)
     with torch.no_grad():
-        # image_features = model.encode_image(image_input)  # not normalized
-        # text_features = model.encode_text(text_inputs)  # not normalized
         image_features, text_features = model(image_input, text_inputs)  # normalized
 
     # Get the scaling factor: inverse temperature
@@ -98,6 +85,59 @@ def image_to_labels(
     prior_odds = prior_probability / (1 - prior_probability)
     bayes_factor = posterrior_odds / prior_odds
 
+    # Get top tasks
+    top_task_prob, top_indices = posterior_probability.topk(topk)
+    top_indices = top_indices.cpu().detach().numpy()
+    top_task_prob = top_task_prob.cpu().detach().numpy()
+
+    similarity = similarity.cpu().detach().numpy()
+    likelihood = likelihood.cpu().detach().numpy()
+    joint_probability = joint_probability.cpu().detach().numpy()
+    prior_probability = prior_probability.cpu().detach().numpy()
+    bayes_factor = bayes_factor.cpu().detach().numpy()
+
+    task_prob_df = pd.DataFrame(
+        {
+            "pred": np.array(vocabulary)[top_indices],
+            "prob": top_task_prob,
+            "similarity": similarity[top_indices],
+            "likelihood": likelihood[top_indices],
+            "prior_prob": prior_probability[top_indices],
+            "joint_prob": joint_probability[top_indices],
+            "bayes_factor": bayes_factor[top_indices],
+        }
+    )
+    return task_prob_df, posterior_probability if return_posterior_probability else task_prob_df
+
+
+def image_to_labels_hierarchical(
+    image,
+    model_path,
+    vocabulary,
+    vocabulary_emb,
+    prior_probability,
+    concept_to_task_idxs,
+    process_to_concept_idxs,
+    concept_names,
+    process_names,
+    topk=10,
+    logit_scale=None,
+    device=None,
+    **kwargs,
+):
+    """Predict the label of an image."""
+    task_prob_df, posterior_probability = image_to_labels(
+        image,
+        model_path,
+        vocabulary,
+        vocabulary_emb,
+        prior_probability,
+        topk=topk,
+        logit_scale=logit_scale,
+        return_posterior_probability=True,
+        device=device,
+        **kwargs,
+    )
     # Calculate P(C|A) = 1 - Prod(1 - P(T|A))
     concept_posterior_probability = torch.zeros(len(concept_names))  # Pre-allocate tensor
     for c_i in range(len(concept_names)):
@@ -116,21 +156,9 @@ def image_to_labels(
     top_concept_indices = top_concept_indices.cpu().detach().numpy()
     top_concepts = top_concepts.cpu().detach().numpy()
 
-    # top_processes, top_process_indices = process_posterior_probability.topk(topk)
     top_processes, top_process_indices = torch.sort(process_posterior_probability, descending=True)
     top_process_indices = top_process_indices.cpu().detach().numpy()
     top_processes = top_processes.cpu().detach().numpy()
-
-    # Get top tasks
-    top_task_prob, top_indices = posterior_probability.topk(topk)
-    top_indices = top_indices.cpu().detach().numpy()
-    top_task_prob = top_task_prob.cpu().detach().numpy()
-
-    similarity = similarity.cpu().detach().numpy()
-    likelihood = likelihood.cpu().detach().numpy()
-    joint_probability = joint_probability.cpu().detach().numpy()
-    prior_probability = prior_probability.cpu().detach().numpy()
-    bayes_factor = bayes_factor.cpu().detach().numpy()
 
     process_prob_df = pd.DataFrame(
         {
@@ -142,17 +170,6 @@ def image_to_labels(
         {
             "pred": np.array(concept_names)[top_concept_indices],
             "prob": top_concepts,
-        }
-    )
-    task_prob_df = pd.DataFrame(
-        {
-            "pred": np.array(vocabulary)[top_indices],
-            "prob": top_task_prob,
-            "similarity": similarity[top_indices],
-            "likelihood": likelihood[top_indices],
-            "prior_prob": prior_probability[top_indices],
-            "joint_prob": joint_probability[top_indices],
-            "bayes_factor": bayes_factor[top_indices],
         }
     )
     return task_prob_df, concept_prob_df, process_prob_df
