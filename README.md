@@ -39,11 +39,11 @@ The embeddings used in the paper can be downloaded from the OSF repository https
 - Text embeddings: https://osf.io/v748f
 - Image embeddings: https://osf.io/nu2s7
 
-To generate the text embeddings refer to the `./jobs/text_embedding.py` script, and to generate the image embeddings refer to the `./jobs/image_embedding.py` script. Note that you will need a NiMARE Dataset object (containing articles with peak activation coordinates and text) for these scripts to work, which can be created using the `./jobs/create_nimare_dset.py` script.
+To generate the text embeddings refer to the [text_embedding.py](./jobs/text_embedding.py) script, and to generate the image embeddings refer to the [image_embedding.py](./jobs/image_embedding.py) script. Note that you will need a NiMARE Dataset object (containing articles with peak activation coordinates and text) for these scripts to work, which can be created using the [create_nimare_dset.py](./jobs/create_nimare_dset.py) script.
 
 #### Baseline model
 
-The baseline models (i.e., Neurosynth and GC-LDA) can be trained using the `./jobs/baseline_train.py` script.
+The baseline models (i.e., Neurosynth and GC-LDA) can be trained using the [baseline_train.py](./jobs/baseline_train.py) script.
 
 The trained baseline models use in the paper can be downloaded from the OSF repository here: https://osf.io/dsj56/ in the folder `./results/baseline`.
 
@@ -53,7 +53,7 @@ Alternatively, you can use the pre-trained model provided in the `./results/pubm
 
 ### Predictions
 
-To perform predictions using the trained model, you can use the `./jobs/predict.py` script.
+To perform predictions using the trained model, you can use the [predict.py](./jobs/predict.py) script.
 
 ## Citation
 
