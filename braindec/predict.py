@@ -10,6 +10,7 @@ import torch
 from nilearn._utils.niimg_conversions import check_same_fov
 from nilearn.image import load_img, resample_to_img
 
+from braindec.cogatlas import CognitiveAtlas
 from braindec.embedding import ImageEmbedding
 from braindec.model import build_model
 from braindec.utils import _get_device, _read_vocabulary, get_data_dir
@@ -22,7 +23,8 @@ def preprocess_image(image, standardize=False, data_dir=None, space="MNI152", de
     Args:
         image: Images
     """
-    nilearn_dir = get_data_dir(op.join(data_dir, "nilearn"))
+    data_dir = get_data_dir(data_dir)
+    nilearn_dir = op.join(data_dir, "nilearn")
 
     image_emb_gene = ImageEmbedding(
         standardize=standardize,
@@ -118,10 +120,7 @@ def image_to_labels_hierarchical(
     vocabulary,
     vocabulary_emb,
     prior_probability,
-    concept_to_task_idxs,
-    process_to_concept_idxs,
-    concept_names,
-    process_names,
+    cognitiveatlas,
     topk=10,
     logit_scale=None,
     device=None,
@@ -140,6 +139,13 @@ def image_to_labels_hierarchical(
         device=device,
         **kwargs,
     )
+
+    # Get mapping and names from cognitive atlas object
+    concept_to_task_idxs = cognitiveatlas.concept_to_task_idxs
+    process_to_concept_idxs = cognitiveatlas.process_to_concept_idxs
+    concept_names = cognitiveatlas.concept_names
+    process_names = cognitiveatlas.process_names
+
     # Calculate P(C|A) = 1 - Prod(1 - P(T|A))
     concept_posterior_probability = torch.zeros(len(concept_names))  # Pre-allocate tensor
     for c_i in range(len(concept_names)):
@@ -210,6 +216,27 @@ def _get_parser():
         help="Path to the vocabulary prior file.",
     )
     parser.add_argument(
+        "--cognitiveatlas",
+        dest="cognitiveatlas",
+        required=False,
+        help="Path to the cognitive atlas object file.",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--hierarchical",
+        dest="hierarchical",
+        required=False,
+        default=False,
+    )
+    parser.add_argument(
+        "--reduced",
+        dest="reduced",
+        required=False,
+        default=True,
+        help="Whether to use the reduced task set.",
+    )
+    parser.add_argument(
         "--mask",
         dest="mask",
         required=True,
@@ -251,14 +278,23 @@ def _main(argv=None):
     vocabulary_fn = option.vocabulary
     vocabulary_emb_fn = option.vocabulary_emb
     vocabulary_prior_fn = option.vocabulary_prior
+    cognitiveatlas_path = option.cognitiveatlas
+    hierarchical = option.hierarchical
+    reduced = option.reduced
     topk = option.topk
     logit_scale = option.logit_scale
     device = option.device
     mask_fn = option.mask
     output_dir = option.output_dir
 
+    if hierarchical and cognitiveatlas_path is None:
+        raise ValueError(
+            "Cognitive atlas files are required for hierarchical decoding. "
+            "Please provide the --cognitiveatlas path argument."
+        )
+
     output_dir = op.dirname(image_fn) if output_dir is None else op.abspath(output_dir)
-    image_name = op.splitext(op.basename(image_fn))[0]
+    image_name = op.basename(image_fn).split(".")[0]
 
     img = nib.load(image_fn)
     mask_img = nib.load(mask_fn)
@@ -271,19 +307,54 @@ def _main(argv=None):
         vocabulary_prior_fn,
     )
 
-    prob_df = image_to_labels(
-        img,
-        model_fn,
-        vocabulary,
-        vocabulary_emb,
-        vocabulary_prior,
-        topk=topk,
-        logit_scale=logit_scale,
-        return_posterior_probability=False,
-        device=device,
-    )
+    if hierarchical:
+        reduced_tasks_fn = op.join(cognitiveatlas_path, "reduced_tasks.csv")
+        reduced_tasks_df = pd.read_csv(reduced_tasks_fn) if reduced else None
 
-    prob_df.to_csv(op.join(output_dir, f"{image_name}_predictions.csv"), index=False)
+        cognitiveatlas = CognitiveAtlas(
+            data_dir=cognitiveatlas_path,
+            task_snapshot=op.join(cognitiveatlas_path, "task_snapshot-02-19-25.json"),
+            concept_snapshot=op.join(
+                cognitiveatlas_path, "concept_extended_snapshot-02-19-25.json"
+            ),
+            reduced_tasks=reduced_tasks_df,
+        )
+
+        task_prob_df, concept_prob_df, process_prob_df = image_to_labels_hierarchical(
+            img,
+            model_fn,
+            vocabulary,
+            vocabulary_emb,
+            vocabulary_prior,
+            cognitiveatlas,
+            topk=topk,
+            logit_scale=logit_scale,
+            device=device,
+        )
+
+        task_prob_df.to_csv(op.join(output_dir, f"{image_name}_task_predictions.csv"), index=False)
+        concept_prob_df.to_csv(
+            op.join(output_dir, f"{image_name}_concept_predictions.csv"), index=False
+        )
+        process_prob_df.to_csv(
+            op.join(output_dir, f"{image_name}_process_predictions.csv"), index=False
+        )
+
+    else:
+
+        prob_df = image_to_labels(
+            img,
+            model_fn,
+            vocabulary,
+            vocabulary_emb,
+            vocabulary_prior,
+            topk=topk,
+            logit_scale=logit_scale,
+            return_posterior_probability=False,
+            device=device,
+        )
+
+        prob_df.to_csv(op.join(output_dir, f"{image_name}_predictions.csv"), index=False)
 
 
 if __name__ == "__main__":
