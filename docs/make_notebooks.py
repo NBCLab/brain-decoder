@@ -38,10 +38,11 @@ INSTALL_CELL = {
 
 def py_to_notebook(py_path: Path, out_path: Path) -> None:
     """Convert a sphinx-gallery .py file to an .ipynb, prepending the install cell."""
+    from nbformat.v4 import new_code_cell
     import jupytext
 
     notebook = jupytext.read(py_path, fmt="py:percent")
-    notebook.cells.insert(0, jupytext.cell_factory.new_code_cell(INSTALL_CELL_SOURCE))
+    notebook.cells.insert(0, new_code_cell(INSTALL_CELL_SOURCE))
     jupytext.write(notebook, out_path, fmt="ipynb")
     print(f"  {py_path.name} → {out_path}")
 

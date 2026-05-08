@@ -43,6 +43,7 @@ doc = [
     "sphinx_rtd_theme",
     "sphinx-copybutton",
     "sphinx-gallery",
+    "jupytext",
 ]
 
 plotting = ["neuromaps", "surfplot"]
