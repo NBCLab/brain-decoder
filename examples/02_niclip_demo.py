@@ -25,7 +25,7 @@ This tutorial walks through the main use cases:
    **Run this tutorial on Google Colab**
 
    .. image:: https://colab.research.google.com/assets/colab-badge.svg
-      :target: https://colab.research.google.com/github/NBCLab/brain-decoder/blob/main/docs/auto_examples/02_niclip_demo.ipynb
+      :target: https://colab.research.google.com/github/jdkent/brain-decoder/blob/main/docs/auto_examples/02_niclip_demo.ipynb
       :alt: Open In Colab
 
    The first notebook cell installs :code:`braindec` and its dependencies

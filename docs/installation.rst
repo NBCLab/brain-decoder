@@ -21,7 +21,7 @@ For local development, clone the repository and install it in editable mode:
 
 .. code-block:: bash
 
-   git clone https://github.com/NBCLab/brain-decoder.git
+   git clone https://github.com/jdkent/brain-decoder.git
    cd brain-decoder
    pip install -e ".[doc,plotting,test]"
 

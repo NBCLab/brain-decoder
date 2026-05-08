@@ -34,7 +34,7 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/JulioAPeraza/braindec"
+Homepage = "https://github.com/jdkent/brain-decoder"
 Documentation = "https://braindec.readthedocs.io/en/latest/"
 
 [project.optional-dependencies]
