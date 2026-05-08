@@ -19,6 +19,10 @@ from pathlib import Path
 INSTALL_CELL_SOURCE = """\
 # Install braindec (this cell is only needed on Google Colab).
 %pip install "braindec[plotting] @ git+https://github.com/jdkent/brain-decoder.git"
+"""
+
+MATPLOTLIB_CELL_SOURCE = """\
+# Display Matplotlib figures inline in notebooks.
 %matplotlib inline
 """
 
@@ -44,6 +48,7 @@ def py_to_notebook(py_path: Path, out_path: Path) -> None:
         "include_colab_link": True,
     }
     notebook.cells.insert(0, new_code_cell(INSTALL_CELL_SOURCE))
+    notebook.cells.insert(1, new_code_cell(MATPLOTLIB_CELL_SOURCE))
     jupytext.write(notebook, out_path, fmt="ipynb")
     print(f"  {py_path.name} → {out_path}")
 
