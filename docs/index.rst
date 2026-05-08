@@ -26,7 +26,7 @@ Installation
 
 .. code-block:: bash
 
-   pip install braindec[plotting]
+   pip install "braindec[plotting] @ git+https://github.com/jdkent/brain-decoder.git"
 
 Quickstart
 ----------

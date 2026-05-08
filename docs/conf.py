@@ -69,7 +69,7 @@ sphinx_gallery_conf = {
     "image_scrapers": ("matplotlib",),
     "default_thumb_file": os.path.join(ROOT, "NiCLIP.png"),
     "first_notebook_cell": (
-        "%pip install braindec[plotting]\n"
+        "%pip install \"braindec[plotting] @ git+https://github.com/jdkent/brain-decoder.git\"\n"
         "%matplotlib inline"
     ),
 }

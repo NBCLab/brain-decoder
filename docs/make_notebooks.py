@@ -22,7 +22,13 @@ import importlib, subprocess, sys
 
 if importlib.util.find_spec("braindec") is None:
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", "braindec[plotting]"],
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "braindec[plotting] @ git+https://github.com/jdkent/brain-decoder.git",
+        ],
         check=True,
     )
 """

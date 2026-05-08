@@ -1,18 +1,18 @@
 Installation
 ============
 
-Install the package from PyPI:
+Install the package from the GitHub repository:
 
 .. code-block:: bash
 
-   pip install braindec
+   pip install "braindec @ git+https://github.com/jdkent/brain-decoder.git"
 
 Install the plotting extras when you want to run the tutorials or make brain
 surface figures:
 
 .. code-block:: bash
 
-   pip install "braindec[plotting]"
+   pip install "braindec[plotting] @ git+https://github.com/jdkent/brain-decoder.git"
 
 Development Install
 -------------------
