@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: update-colab-notebooks
+        name: Regenerate Colab notebooks
+        language: python
+        additional_dependencies: [jupytext]
+        entry: python docs/make_notebooks.py --stage --examples
+        files: ^examples/\d{2}_.*\.py$
+        pass_filenames: true

@@ -48,28 +48,15 @@ intersphinx_mapping = {
     "torch": ("https://pytorch.org/docs/stable", None),
 }
 
-# sphinx-gallery configuration
-# The first_notebook_cell is injected verbatim as the first code cell of
-# every generated .ipynb, so Colab users can install the package before
-# running any example code.
-_COLAB_INSTALL_CELL = """\
-# Install braindec (this cell is only needed on Google Colab).
-import importlib, subprocess, sys
-
-if importlib.util.find_spec("braindec") is None:
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "braindec[plotting]"],
-        check=True,
-    )
-"""
-
+# sphinx-gallery configuration.
+# Notebooks for Colab are generated separately via docs/make_notebooks.py
+# (which uses jupytext and injects the braindec install cell).  sphinx-gallery
+# is used only to build the HTML gallery pages from the .py sources.
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
     "gallery_dirs": ["auto_examples"],
     # Only process files whose names start with two digits.
     "filename_pattern": r"/\d{2}_",
-    # Inject the Colab install cell at the top of every generated notebook.
-    "first_notebook_cell": _COLAB_INSTALL_CELL,
     # Set to True locally to execute examples and capture outputs.
     # On ReadTheDocs the examples are not executed (too slow / GPU-dependent).
     "plot_gallery": os.environ.get("BRAINDEC_BUILD_GALLERY", "0") == "1",
