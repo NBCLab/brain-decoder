@@ -11,6 +11,8 @@ cognitive task descriptions from the
    :maxdepth: 1
    :caption: User guide
 
+   installation
+   quickstart
    auto_examples/index
 
 .. toctree::
@@ -51,7 +53,7 @@ Download the example assets and run functional decoding in a few lines:
    )
    print(task_df)
 
-See the :ref:`examples gallery <sphx_glr_auto_examples>` for a full walkthrough.
+See the :doc:`examples gallery <auto_examples/index>` for a full walkthrough.
 
 Citation
 --------

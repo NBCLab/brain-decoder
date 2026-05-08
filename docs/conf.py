@@ -3,7 +3,9 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(".."))
+DOCS_DIR = os.path.abspath(os.path.dirname(__file__))
+ROOT = os.path.abspath(os.path.join(DOCS_DIR, ".."))
+sys.path.insert(0, ROOT)
 
 project = "braindec"
 copyright = "2025, Braindec developers"
@@ -21,7 +23,6 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
-    "sphinx_argparse",
     "sphinx_copybutton",
     "sphinx_gallery.gen_gallery",
 ]
@@ -45,7 +46,7 @@ intersphinx_mapping = {
     "nibabel": ("https://nipy.org/nibabel", None),
     "nilearn": ("https://nilearn.github.io/stable", None),
     "nimare": ("https://nimare.readthedocs.io/en/stable", None),
-    "torch": ("https://pytorch.org/docs/stable", None),
+    "torch": ("https://docs.pytorch.org/docs/stable", None),
 }
 
 # sphinx-gallery configuration.
@@ -66,5 +67,9 @@ sphinx_gallery_conf = {
     "reference_url": {"braindec": None},
     "backreferences_dir": "gen_modules/backreferences",
     "image_scrapers": ("matplotlib",),
-    "default_thumb_file": "../NiCLIP.png",
+    "default_thumb_file": os.path.join(ROOT, "NiCLIP.png"),
+    "first_notebook_cell": (
+        "%pip install braindec[plotting]\n"
+        "%matplotlib inline"
+    ),
 }

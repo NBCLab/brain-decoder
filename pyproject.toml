@@ -41,7 +41,6 @@ Documentation = "https://braindec.readthedocs.io/en/latest/"
 doc = [
     "sphinx>=2.0",
     "sphinx_rtd_theme",
-    "sphinx-argparse",
     "sphinx-copybutton",
     "sphinx-gallery",
 ]
