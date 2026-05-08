@@ -18,19 +18,8 @@ from pathlib import Path
 
 INSTALL_CELL_SOURCE = """\
 # Install braindec (this cell is only needed on Google Colab).
-import importlib, subprocess, sys
-
-if importlib.util.find_spec("braindec") is None:
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "braindec[plotting] @ git+https://github.com/jdkent/brain-decoder.git",
-        ],
-        check=True,
-    )
+%pip install "braindec[plotting] @ git+https://github.com/jdkent/brain-decoder.git"
+%matplotlib inline
 """
 
 INSTALL_CELL = {
@@ -48,6 +37,12 @@ def py_to_notebook(py_path: Path, out_path: Path) -> None:
     import jupytext
 
     notebook = jupytext.read(py_path, fmt="py:percent")
+    notebook.metadata["accelerator"] = "GPU"
+    notebook.metadata["gpuType"] = "T4"
+    notebook.metadata["colab"] = {
+        "gpuType": "T4",
+        "include_colab_link": True,
+    }
     notebook.cells.insert(0, new_code_cell(INSTALL_CELL_SOURCE))
     jupytext.write(notebook, out_path, fmt="ipynb")
     print(f"  {py_path.name} → {out_path}")

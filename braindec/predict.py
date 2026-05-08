@@ -119,7 +119,9 @@ def image_to_labels(
             "bayes_factor": bayes_factor[top_indices],
         }
     )
-    return task_prob_df, posterior_probability if return_posterior_probability else task_prob_df
+    if return_posterior_probability:
+        return task_prob_df, posterior_probability
+    return task_prob_df
 
 
 def image_to_labels_hierarchical(

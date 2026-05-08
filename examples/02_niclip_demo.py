@@ -186,31 +186,28 @@ print("Top-10 task predictions for HCP Motor (AVG) contrast:")
 print(task_df.to_string(index=False))
 
 # %%
-# Visualise the input activation map alongside the top-5 task predictions.
+# Visualise the input activation map and the top-5 task predictions.
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 4))
-
-# Left: activation map
-display = plot_stat_map(
+plot_stat_map(
     motor_img,
     display_mode="z",
     cut_coords=5,
     colorbar=True,
     threshold=2.0,
     title="HCP Motor (AVG) z-stat",
-    axes=axes[0],
 )
+plt.show()
 
-# Right: posterior probability bar chart
 top5 = task_df.head(5)
 short_labels = [t[:40] + "…" if len(t) > 40 else t for t in top5["pred"]]
-axes[1].barh(range(len(top5)), top5["prob"], color="steelblue")
-axes[1].set_yticks(range(len(top5)))
-axes[1].set_yticklabels(short_labels, fontsize=9)
-axes[1].invert_yaxis()
-axes[1].set_xlabel("Posterior probability P(T|A)")
-axes[1].set_title("Top-5 task predictions")
-axes[1].set_xlim(0, top5["prob"].max() * 1.2)
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.barh(range(len(top5)), top5["prob"], color="steelblue")
+ax.set_yticks(range(len(top5)))
+ax.set_yticklabels(short_labels, fontsize=9)
+ax.invert_yaxis()
+ax.set_xlabel("Posterior probability P(T|A)")
+ax.set_title("Top-5 task predictions")
+ax.set_xlim(0, top5["prob"].max() * 1.2)
 plt.tight_layout()
 plt.show()
 
@@ -293,42 +290,75 @@ plt.show()
 # requiring pre-computed meta-analytic maps.  This supports hypothesis
 # generation about the cognitive roles of unstudied regions.
 #
-# We create binary ROI masks from the
-# `AAL atlas <https://www.gin.cnrs.fr/en/tools/aal/>`_ (available via
-# nilearn) and decode each region.
+# We create binary ROI masks from the Harvard-Oxford atlas available via
+# nilearn.  The subcortical atlas provides named amygdala, hippocampus, and
+# striatal regions.  For cortical examples not represented in this atlas, we
+# add simple spherical MNI ROIs so the tutorial still covers a broader set of
+# functional regions.
 
 from nilearn import datasets, image as nli_image
 
-aal = datasets.fetch_atlas_aal()
-aal_img = nib.load(aal.maps)
-aal_data = aal_img.get_fdata()
-
-# Map AAL label names → image indices (1-based in the NIfTI data).
-aal_label_to_idx = {name: int(idx) for name, idx in zip(aal.labels, aal.indices)}
+mask_img = nib.load(mask_fn)
+mask_data = mask_img.get_fdata() > 0
 
 
-def make_aal_roi(region_names):
-    """Binary mask from one or more AAL region names."""
-    mask = np.zeros(aal_data.shape, dtype=np.float32)
+def make_label_roi(atlas_img, atlas_labels, region_names):
+    """Create a binary ROI from one or more deterministic atlas label names."""
+    atlas_data = atlas_img.get_fdata()
+    label_to_idx = {name: idx for idx, name in enumerate(atlas_labels)}
+    roi = np.zeros(atlas_data.shape, dtype=np.float32)
     for name in region_names:
-        if name in aal_label_to_idx:
-            mask[aal_data == aal_label_to_idx[name]] = 1.0
+        if name in label_to_idx:
+            roi[atlas_data == label_to_idx[name]] = 1.0
         else:
-            print(f"  Warning: '{name}' not found in AAL atlas.")
-    return nib.Nifti1Image(mask, aal_img.affine, aal_img.header)
+            print(f"  Warning: '{name}' not found in atlas.")
+    return nib.Nifti1Image(roi, atlas_img.affine, atlas_img.header)
 
 
-# Six regions matching those in the NiCLIP paper.
-ROI_SPECS = {
-    "Amygdala": ["Amygdala_L", "Amygdala_R"],
-    "Hippocampus": ["Hippocampus_L", "Hippocampus_R"],
-    "Insula": ["Insula_L", "Insula_R"],
-    "Striatum": ["Putamen_L", "Putamen_R", "Caudate_L", "Caudate_R"],
-    "rTPJ": ["Angular_R", "SupraMarginal_R"],
-    "vmPFC": ["Frontal_Med_Orb_L", "Frontal_Med_Orb_R"],
+def make_spherical_roi(center_xyz, radius_mm=8):
+    """Create a spherical ROI in MNI millimeter coordinates."""
+    ijk = np.indices(mask_img.shape).reshape(3, -1).T
+    xyz = nib.affines.apply_affine(mask_img.affine, ijk)
+    distances = np.linalg.norm(xyz - np.asarray(center_xyz), axis=1)
+    roi = (distances <= radius_mm).reshape(mask_img.shape) & mask_data
+    return nib.Nifti1Image(roi.astype(np.float32), mask_img.affine, mask_img.header)
+
+
+ROI_LABEL_SPECS = {
+    "Amygdala": ["Left Amygdala", "Right Amygdala"],
+    "Hippocampus": ["Left Hippocampus", "Right Hippocampus"],
+    "Striatum": ["Left Putamen", "Right Putamen", "Left Caudate", "Right Caudate"],
 }
 
-roi_images = {name: make_aal_roi(labels) for name, labels in ROI_SPECS.items()}
+ROI_COORD_SPECS = {
+    "Amygdala": (-22, -4, -18),
+    "Hippocampus": (-26, -20, -14),
+    "Insula": (-34, 18, 4),
+    "Striatum": (-18, 8, 4),
+    "rTPJ": (54, -54, 24),
+    "vmPFC": (0, 46, -8),
+}
+
+try:
+    ho_sub = datasets.fetch_atlas_harvard_oxford(
+        "sub-maxprob-thr25-2mm",
+        data_dir=op.join(data_dir, "nilearn"),
+        verbose=1,
+    )
+    roi_images = {
+        name: make_label_roi(ho_sub.maps, ho_sub.labels, labels)
+        for name, labels in ROI_LABEL_SPECS.items()
+    }
+    roi_images.update({
+        name: make_spherical_roi(center)
+        for name, center in ROI_COORD_SPECS.items()
+        if name not in roi_images
+    })
+    print("Using Harvard-Oxford atlas ROIs with spherical cortical examples.")
+except Exception as exc:
+    print(f"Harvard-Oxford atlas download failed ({type(exc).__name__}: {exc})")
+    print("Using fallback spherical MNI ROIs for this tutorial run.")
+    roi_images = {name: make_spherical_roi(center) for name, center in ROI_COORD_SPECS.items()}
 
 # %%
 # Decode each ROI and collect the top task, concept, and domain.
@@ -364,16 +394,14 @@ print(summary_df.to_string(index=False))
 
 from nilearn.plotting import plot_roi
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 4))
-
-display = plot_roi(
+plot_roi(
     roi_images["Amygdala"],
     title="Amygdala (bilateral)",
     display_mode="ortho",
     cut_coords=(0, -4, -18),
-    axes=axes[0],
     colorbar=False,
 )
+plt.show()
 
 # Decode the amygdala with a finer top-k for the bar chart.
 t_df, c_df, d_df = image_to_labels_hierarchical(
@@ -391,12 +419,13 @@ t_df, c_df, d_df = image_to_labels_hierarchical(
 )
 
 labels = [t[:38] + "…" if len(t) > 38 else t for t in t_df["pred"]]
-axes[1].barh(range(5), t_df["prob"], color="salmon")
-axes[1].set_yticks(range(5))
-axes[1].set_yticklabels(labels, fontsize=8)
-axes[1].invert_yaxis()
-axes[1].set_xlabel("P(T|A)")
-axes[1].set_title("Top-5 task predictions for Amygdala ROI")
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.barh(range(5), t_df["prob"], color="salmon")
+ax.set_yticks(range(5))
+ax.set_yticklabels(labels, fontsize=8)
+ax.invert_yaxis()
+ax.set_xlabel("P(T|A)")
+ax.set_title("Top-5 task predictions for Amygdala ROI")
 
 plt.tight_layout()
 plt.show()
@@ -505,24 +534,23 @@ task_df_custom = image_to_labels(
     data_dir=data_dir,
 )
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 4))
-
-display = plot_stat_map(
+plot_stat_map(
     emotion_img,
     display_mode="z",
     cut_coords=5,
     threshold=2.0,
     title="HCP Emotion (Faces vs Shapes)",
-    axes=axes[0],
 )
+plt.show()
 
 labels = [t[:38] + "…" if len(t) > 38 else t for t in task_df_custom["pred"]]
-axes[1].barh(range(len(task_df_custom)), task_df_custom["prob"], color="mediumpurple")
-axes[1].set_yticks(range(len(task_df_custom)))
-axes[1].set_yticklabels(labels, fontsize=8)
-axes[1].invert_yaxis()
-axes[1].set_xlabel("P(T|A)")
-axes[1].set_title("Emotion-focused vocabulary predictions")
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.barh(range(len(task_df_custom)), task_df_custom["prob"], color="mediumpurple")
+ax.set_yticks(range(len(task_df_custom)))
+ax.set_yticklabels(labels, fontsize=8)
+ax.invert_yaxis()
+ax.set_xlabel("P(T|A)")
+ax.set_title("Emotion-focused vocabulary predictions")
 plt.tight_layout()
 plt.show()
 
@@ -594,19 +622,15 @@ except TypeError:
 # Show a handful of DiFuMo components to illustrate the parcellation.
 difumo_img = nib.load(difumo.maps)
 n_components_to_show = 6
-fig, axes = plt.subplots(2, 3, figsize=(14, 6))
-for comp_i, ax in enumerate(axes.ravel()):
+for comp_i in range(n_components_to_show):
     comp_img = nli_image.index_img(difumo_img, comp_i)
     plot_roi(
         comp_img,
         display_mode="z",
         cut_coords=1,
         title=f"DiFuMo component {comp_i + 1}",
-        axes=ax,
         colorbar=False,
     )
-fig.suptitle("DiFuMo-512 atlas: first 6 components", fontsize=13)
-plt.tight_layout()
 plt.show()
 
 # %%
