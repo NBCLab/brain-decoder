@@ -34,16 +34,16 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/JulioAPeraza/braindec"
+Homepage = "https://github.com/jdkent/brain-decoder"
 Documentation = "https://braindec.readthedocs.io/en/latest/"
 
 [project.optional-dependencies]
 doc = [
     "sphinx>=2.0",
     "sphinx_rtd_theme",
-    "sphinx-argparse",
     "sphinx-copybutton",
     "sphinx-gallery",
+    "jupytext",
 ]
 
 plotting = ["neuromaps", "surfplot"]

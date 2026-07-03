@@ -6,15 +6,13 @@ from typing import List, Union
 import numpy as np
 import torch
 from nilearn import datasets
-from nilearn.image import concat_imgs
+from nilearn.image import concat_imgs, load_img, new_img_like, resample_to_img
 from nilearn.maskers import NiftiMapsMasker, SurfaceMapsMasker
 from nimare.dataset import Dataset
 from nimare.meta.kernel import MKDAKernel
-from peft import PeftConfig, PeftModel
 from tqdm import tqdm
-from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 
-from braindec.utils import _get_device, _vol_surfimg
+from braindec.utils import _get_device, _vol_surfimg, images_have_same_fov
 
 
 def _coordinates_to_image(dset: Dataset, kernel: str = "mkda"):
@@ -51,16 +49,23 @@ class TextEmbedding:
         self.batch_size = batch_size
 
         if model_name == "mistralai/Mistral-7B-v0.1":
+            from transformers import AutoModel, AutoTokenizer
+
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.model = AutoModel.from_pretrained(model_name).to(self.device)
             self.max_length = 8192 if max_length is None else max_length
 
         elif model_name == "meta-llama/Llama-2-7b-chat-hf":
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
             self.max_length = 4096 if max_length is None else max_length
 
         elif model_name == "BrainGPT/BrainGPT-7B-v0.1":
+            from peft import PeftConfig, PeftModel
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+
             config = PeftConfig.from_pretrained(model_name)
             model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
 
@@ -69,6 +74,9 @@ class TextEmbedding:
             self.max_length = 4096 if max_length is None else max_length
 
         elif model_name == "BrainGPT/BrainGPT-7B-v0.2":
+            from peft import PeftConfig, PeftModel
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+
             config = PeftConfig.from_pretrained(model_name)
             # The config file has path to the base model instead of the model name
             model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.1")
@@ -232,15 +240,23 @@ class ImageEmbedding:
         self.dimension = dimension
         self.space = space
         self.density = density
+        self._maps_cache = {}
 
         if self.atlas == "difumo":
-            difumo = datasets.fetch_atlas_difumo(
-                dimension=self.dimension,
-                resolution_mm=2,
-                legacy_format=False,
-                data_dir=self.nilearn_dir,
-            )
+            difumo_kwargs = {
+                "dimension": self.dimension,
+                "resolution_mm": 2,
+                "data_dir": self.nilearn_dir,
+            }
+            try:
+                difumo = datasets.fetch_atlas_difumo(
+                    legacy_format=False,
+                    **difumo_kwargs,
+                )
+            except TypeError:
+                difumo = datasets.fetch_atlas_difumo(**difumo_kwargs)
             atlas_maps = difumo.maps
+            self.atlas_maps = load_img(atlas_maps)
         else:
             # Implement other atlases
             raise ValueError(f"Atlas {atlas} not supported.")
@@ -274,11 +290,75 @@ class ImageEmbedding:
         Returns:
             Numpy array containing the embedding
         """
+        if self.space == "MNI152":
+            return self._generate_volume_embedding(images)
+
         if isinstance(images, list):
+            images = [self._sanitize_image(image) for image in images]
             # Concat images to improve performance
             images = concat_imgs(images)
+        else:
+            images = self._sanitize_image(images)
 
-        return self.masker.fit_transform(images)
+        embeddings = self.masker.fit_transform(images)
+        if embeddings.ndim == 1:
+            embeddings = embeddings[None, :]
+
+        return embeddings
+
+    @staticmethod
+    def _sanitize_image(image):
+        image = load_img(image)
+        image_data = image.get_fdata()
+        if np.isfinite(image_data).all():
+            return image
+
+        warnings.warn("Non-finite values detected in image data. Replacing them with zeros.")
+        image_data = np.nan_to_num(image_data, nan=0.0, posinf=0.0, neginf=0.0)
+        return new_img_like(image, image_data, copy_header=True)
+
+    def _get_maps_data(self, reference_img):
+        if reference_img is None:
+            cache_key = ("native",)
+        else:
+            cache_key = (
+                tuple(reference_img.shape[:3]),
+                tuple(reference_img.affine.ravel()),
+            )
+
+        if cache_key not in self._maps_cache:
+            atlas_img = self.atlas_maps
+            if reference_img is not None and not images_have_same_fov(atlas_img, reference_img):
+                atlas_img = resample_to_img(atlas_img, reference_img, interpolation="continuous")
+
+            maps_data = atlas_img.get_fdata(dtype=np.float32)
+            maps_data = np.nan_to_num(maps_data, nan=0.0, posinf=0.0, neginf=0.0)
+            maps_gram = np.tensordot(
+                maps_data,
+                maps_data,
+                axes=([0, 1, 2], [0, 1, 2]),
+            ).astype(np.float32)
+            maps_gram += np.eye(maps_gram.shape[0], dtype=np.float32) * 1e-6
+            self._maps_cache[cache_key] = (maps_data, maps_gram)
+
+        return self._maps_cache[cache_key]
+
+    def _generate_volume_embedding(self, images) -> np.ndarray:
+        image = self._sanitize_image(images)
+        if not images_have_same_fov(image, self.atlas_maps):
+            image = resample_to_img(image, self.atlas_maps, interpolation="continuous")
+        image_data = image.get_fdata(dtype=np.float32)
+        image_data = np.nan_to_num(image_data, nan=0.0, posinf=0.0, neginf=0.0)
+        if image_data.ndim == 3:
+            image_data = image_data[..., None]
+
+        maps_data, maps_gram = self._get_maps_data(None)
+        xty = np.tensordot(maps_data, image_data, axes=([0, 1, 2], [0, 1, 2])).astype(np.float32)
+        embeddings = np.linalg.solve(maps_gram, xty).T
+        if embeddings.ndim == 1:
+            embeddings = embeddings[None, :]
+
+        return embeddings
 
     def __call__(self, images) -> np.ndarray:
         """

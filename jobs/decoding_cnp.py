@@ -1,3 +1,14 @@
+"""Decode CNP maps into task, concept, and domain predictions.
+
+Expected inputs:
+- NIfTI maps in `data/cnp` by default.
+- Prediction labels are derived from filenames and written into filenames like
+  `<prediction_label>_<vocabulary_label>_section-<section>_pred-task_brainclip.csv`.
+
+Use a companion mapping CSV with `prediction_label` plus task metadata when running
+`jobs/decoding_eval.py` on the resulting outputs.
+"""
+
 import argparse
 import itertools
 import os
@@ -13,18 +24,19 @@ from jobs.utils import (
     add_common_job_args,
     build_cognitiveatlas,
     get_source,
+    infer_prediction_label,
     load_decoding_resources,
     resolve_project_paths,
 )
 
 
 def _get_parser():
-    parser = add_common_job_args(argparse.ArgumentParser(description="Decode IBC maps"))
+    parser = add_common_job_args(argparse.ArgumentParser(description="Decode CNP maps"))
     parser.add_argument(
         "--image_dir",
         dest="image_dir",
         default=None,
-        help="Optional explicit path to the IBC image directory.",
+        help="Optional explicit path to the CNP image directory.",
     )
     parser.add_argument(
         "--output_dir",
@@ -47,10 +59,17 @@ def _get_parser():
         help="Vocabulary embedding variants to evaluate.",
     )
     parser.add_argument(
-        "--make_plots",
-        dest="make_plots",
-        action="store_true",
-        help="Write surface renderings for each input image.",
+        "--label_delimiter",
+        dest="label_delimiter",
+        default="_",
+        help="Delimiter used to split image stems when deriving prediction labels.",
+    )
+    parser.add_argument(
+        "--label_token_index",
+        dest="label_token_index",
+        type=int,
+        default=0,
+        help="Token index used to derive the prediction label from the image stem.",
     )
     parser.add_argument(
         "--mapping_fn",
@@ -96,7 +115,8 @@ def main(
     logit_scale=20.0,
     device=None,
     reduced=True,
-    make_plots=False,
+    label_delimiter="_",
+    label_token_index=0,
     mapping_fn=None,
     num_shards=1,
     shard_index=0,
@@ -115,9 +135,9 @@ def main(
     _, data_dir, results_dir = resolve_project_paths(project_dir, data_dir, results_dir)
     source = get_source(reduced)
     voc_dir = op.join(data_dir, "vocabulary")
-    image_dir = op.join(data_dir, "ibc") if image_dir is None else op.abspath(image_dir)
+    image_dir = op.join(data_dir, "cnp") if image_dir is None else op.abspath(image_dir)
     output_dir = (
-        op.join(results_dir, "predictions_ibc") if output_dir is None else op.abspath(output_dir)
+        op.join(results_dir, "predictions_cnp") if output_dir is None else op.abspath(output_dir)
     )
     os.makedirs(output_dir, exist_ok=True)
 
@@ -149,22 +169,16 @@ def main(
     images = [img_fn for idx, img_fn in enumerate(images) if idx % num_shards == shard_index]
 
     image_records = []
-    for img_fn in tqdm(images, desc="load ibc images", unit="img"):
-        image_name = op.basename(img_fn).split(".")[0]
-        task_name = image_name.split("_")[0]
-        if make_plots:
-            from braindec.plot import plot_surf
-
-            plot_surf(
-                img_fn,
-                op.join(output_dir, f"{task_name}_map.png"),
-                vmax=None,
-            )
-
+    for img_fn in tqdm(images, desc="load cnp images", unit="img"):
+        prediction_label = infer_prediction_label(
+            img_fn,
+            delimiter=label_delimiter,
+            token_index=label_token_index,
+        )
         img = nib.load(img_fn)
         if not images_have_same_fov(img, mask_img):
             img = resample_to_img(img, mask_img)
-        image_records.append((task_name, img))
+        image_records.append((prediction_label, img))
 
     for section, category, sub_category, model_id in itertools.product(
         sections,
@@ -211,9 +225,9 @@ def main(
                 if ns_mask is None:
                     ns_mask = getattr(ns_masker, "mask_img_", None)
 
-        desc = f"decode ibc {section}/{category}/{sub_category}/{resources['model_name']}"
-        for task_name, img in tqdm(image_records, desc=desc, unit="img"):
-            file_base_name = f"{task_name}_{resources['vocabulary_label']}_section-{section}"
+        desc = f"decode cnp {section}/{category}/{sub_category}/{resources['model_name']}"
+        for prediction_label, img in tqdm(image_records, desc=desc, unit="img"):
+            file_base_name = f"{prediction_label}_{resources['vocabulary_label']}_section-{section}"
             task_out_fn = f"{file_base_name}_pred-task_brainclip.csv"
             concept_out_fn = f"{file_base_name}_pred-concept_brainclip.csv"
             process_out_fn = f"{file_base_name}_pred-process_brainclip.csv"

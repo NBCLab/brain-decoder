@@ -51,6 +51,24 @@ The trained baseline models use in the paper can be downloaded from the OSF repo
 
 Alternatively, you can use the pre-trained model provided in the `./results/pubmed` directory in https://osf.io/dsj56/.
 
+### Download published assets
+
+The package now includes an OSF downloader for the assets documented in this README. It can download individual files, predefined bundles, or whole published folders while recreating the OSF directory layout under a destination root.
+
+```bash
+# List built-in assets and bundles
+python -m braindec.fetcher --list
+
+# Download the example prediction bundle into the current repository
+python -m braindec.fetcher --bundle example_prediction --destination_root .
+
+# Download the published pretrained results and baseline folders
+python -m braindec.fetcher --bundle paper_results --destination_root .
+
+# Download a specific published folder from the OSF project
+python -m braindec.fetcher --folder data/cognitive_atlas --destination_root .
+```
+
 ### Predictions
 
 To perform predictions using the trained model, you can use the [predict.py](./braindec/predict.py) script.

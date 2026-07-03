@@ -1,9 +1,10 @@
 import json
+import os.path as op
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
 import requests
-from nimare import extract
 
 COGATLAS_URLS = {
     "task": "https://www.cognitiveatlas.org/api/v-alpha/task",
@@ -53,6 +54,43 @@ def _get_concepts_to_tasks(relationships_df, concept_to_task=None):
     concepts_to_tasks_df = relationships_df.loc[relationships_df["rel_type"] == "measuredBy"]
     concepts_to_tasks_df = concepts_to_tasks_df.drop(columns=["rel_type"])
     concepts_to_tasks_df.columns = ["id", "measuredBy"]
+    return concepts_to_tasks_df
+
+
+def _fetch_full_task_concepts(task_ids, cache_fn, concept_to_task=None, max_workers=16):
+    if cache_fn is not None and op.exists(cache_fn):
+        concepts_to_tasks_df = pd.read_csv(cache_fn)
+    else:
+        base_url = "https://www.cognitiveatlas.org/api/v-alpha/task"
+
+        def _fetch_one(task_id):
+            response = requests.get(base_url, params={"id": task_id}, timeout=30)
+            response.raise_for_status()
+            task_json = response.json()
+            rows = []
+            for concept in task_json.get("concepts", []):
+                concept_id = concept.get("concept_id")
+                if concept_id:
+                    rows.append({"id": concept_id, "measuredBy": task_id})
+            return rows
+
+        rows = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for task_rows in executor.map(_fetch_one, task_ids):
+                rows.extend(task_rows)
+        concepts_to_tasks_df = pd.DataFrame(rows).drop_duplicates()
+        if cache_fn is not None:
+            concepts_to_tasks_df.to_csv(cache_fn, index=False)
+
+    if concept_to_task is not None:
+        extra_df = pd.DataFrame(
+            {
+                "id": list(concept_to_task.keys()),
+                "measuredBy": list(concept_to_task.values()),
+            }
+        )
+        concepts_to_tasks_df = pd.concat([concepts_to_tasks_df, extra_df], ignore_index=True)
+        concepts_to_tasks_df = concepts_to_tasks_df.drop_duplicates()
     return concepts_to_tasks_df
 
 
@@ -131,11 +169,12 @@ class CognitiveAtlas:
         if reduced_tasks is not None:
             concepts_to_tasks_df = self._get_concepts_to_tasks_red(reduced_tasks)
         else:
-            cogatlas = extract.download_cognitive_atlas(data_dir=data_dir, overwrite=False)
-            relationships_df = pd.read_csv(cogatlas["relationships"])
-
-            concepts_to_tasks_df = _get_concepts_to_tasks(
-                relationships_df,
+            cache_fn = None
+            if data_dir is not None:
+                cache_fn = op.join(data_dir, "cognitive_atlas", "full_task_concepts.csv")
+            concepts_to_tasks_df = _fetch_full_task_concepts(
+                self.task_df["id"].tolist(),
+                cache_fn=cache_fn,
                 concept_to_task=concept_to_task,
             )
 
@@ -148,14 +187,14 @@ class CognitiveAtlas:
                 continue
 
             sel_tasks = sel_df["measuredBy"].values
-            indices = np.where(np.in1d(self.task_df["id"].values, sel_tasks))[0]
+            indices = np.where(np.isin(self.task_df["id"].values, sel_tasks))[0]
 
             self.concept_to_task_idxs.append(indices)
 
         self.process_to_concept_idxs = []
         for process in self.process_names:
             sel_df = self.concept_df.loc[self.concept_df["cognitive_process"] == process]
-            indices = np.where(np.in1d(self.concept_df["id"].values, sel_df["id"].values))[0]
+            indices = np.where(np.isin(self.concept_df["id"].values, sel_df["id"].values))[0]
 
             self.process_to_concept_idxs.append(indices)
 
@@ -167,7 +206,7 @@ class CognitiveAtlas:
                 continue
 
             sel_concepts = sel_df["id"].values
-            indices = np.where(np.in1d(self.concept_df["id"].values, sel_concepts))[0]
+            indices = np.where(np.isin(self.concept_df["id"].values, sel_concepts))[0]
 
             self.task_to_concept_idxs.append(indices)
 
@@ -176,11 +215,9 @@ class CognitiveAtlas:
             sel_concepts = concepts_to_tasks_df.loc[concepts_to_tasks_df["measuredBy"] == task][
                 "id"
             ].values
-            if task == "trm_550b54a8b30f4":
-                print(sel_concepts)
 
             sel_df = self.concept_df.loc[self.concept_df["id"].isin(sel_concepts)]
-            indices = np.where(np.in1d(self.process_ids, sel_df["id_concept_class"].values))[0]
+            indices = np.where(np.isin(self.process_ids, sel_df["id_concept_class"].values))[0]
 
             self.task_to_process_idxs.append(indices)
 
@@ -198,24 +235,24 @@ class CognitiveAtlas:
 
     def get_task_idx_from_names(self, names):
         if isinstance(names, str):
-            return np.where(np.in1d(self.task_names, names))[0][0]
+            return np.where(np.isin(self.task_names, names))[0][0]
 
-        return [np.where(np.in1d(self.task_names, task_name))[0][0] for task_name in names]
+        return [np.where(np.isin(self.task_names, task_name))[0][0] for task_name in names]
 
     def get_concept_idx_from_names(self, names):
         if isinstance(names, str):
-            return np.where(np.in1d(self.concept_names, names))[0][0]
+            return np.where(np.isin(self.concept_names, names))[0][0]
 
         return [
-            np.where(np.in1d(self.concept_names, concept_name))[0][0] for concept_name in names
+            np.where(np.isin(self.concept_names, concept_name))[0][0] for concept_name in names
         ]
 
     def get_process_idx_from_names(self, names):
         if isinstance(names, str):
-            return np.where(np.in1d(self.process_names, names))[0][0]
+            return np.where(np.isin(self.process_names, names))[0][0]
 
         return [
-            np.where(np.in1d(self.process_names, process_name))[0][0] for process_name in names
+            np.where(np.isin(self.process_names, process_name))[0][0] for process_name in names
         ]
 
     def get_task_names_from_idx(self, task_idx):

@@ -7,16 +7,22 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import torch
-from nilearn._utils.niimg_conversions import check_same_fov
 from nilearn.image import load_img, resample_to_img
 
 from braindec.cogatlas import CognitiveAtlas
 from braindec.embedding import ImageEmbedding
 from braindec.model import build_model
-from braindec.utils import _get_device, _read_vocabulary, get_data_dir
+from braindec.utils import _get_device, _read_vocabulary, get_data_dir, images_have_same_fov
 
 
-def preprocess_image(image, standardize=False, data_dir=None, space="MNI152", density=None):
+def preprocess_image(
+    image,
+    standardize=False,
+    data_dir=None,
+    space="MNI152",
+    density=None,
+    image_emb_gene=None,
+):
     """
     Preprocess the image.
 
@@ -26,12 +32,13 @@ def preprocess_image(image, standardize=False, data_dir=None, space="MNI152", de
     data_dir = get_data_dir(data_dir)
     nilearn_dir = op.join(data_dir, "nilearn")
 
-    image_emb_gene = ImageEmbedding(
-        standardize=standardize,
-        nilearn_dir=nilearn_dir,
-        space=space,
-        density=density,
-    )
+    if image_emb_gene is None:
+        image_emb_gene = ImageEmbedding(
+            standardize=standardize,
+            nilearn_dir=nilearn_dir,
+            space=space,
+            density=density,
+        )
     image_embedding_arr = image_emb_gene(image)
 
     return torch.from_numpy(image_embedding_arr).float()
@@ -47,6 +54,7 @@ def image_to_labels(
     logit_scale=None,
     return_posterior_probability=False,
     device=None,
+    model=None,
     **kwargs,
 ):
     """Predict the labels of an image using a pre-trained model."""
@@ -65,7 +73,7 @@ def image_to_labels(
     image_input = image_input / (image_input.norm(dim=-1, keepdim=True) + 1e-8)
 
     # Calculate features
-    model = build_model(model_path, device=device)
+    model = build_model(model_path, device=device) if model is None else model
     with torch.no_grad():
         image_features, text_features = model(image_input, text_inputs)  # normalized
 
@@ -111,7 +119,9 @@ def image_to_labels(
             "bayes_factor": bayes_factor[top_indices],
         }
     )
-    return task_prob_df, posterior_probability if return_posterior_probability else task_prob_df
+    if return_posterior_probability:
+        return task_prob_df, posterior_probability
+    return task_prob_df
 
 
 def image_to_labels_hierarchical(
@@ -124,6 +134,7 @@ def image_to_labels_hierarchical(
     topk=10,
     logit_scale=None,
     device=None,
+    model=None,
     **kwargs,
 ):
     """Predict the label of an image."""
@@ -137,6 +148,7 @@ def image_to_labels_hierarchical(
         logit_scale=logit_scale,
         return_posterior_probability=True,
         device=device,
+        model=model,
         **kwargs,
     )
 
@@ -298,7 +310,7 @@ def _main(argv=None):
 
     img = nib.load(image_fn)
     mask_img = nib.load(mask_fn)
-    if not check_same_fov(img, reference_masker=mask_img):
+    if not images_have_same_fov(img, mask_img):
         img = resample_to_img(img, mask_img)
 
     vocabulary, vocabulary_emb, vocabulary_prior = _read_vocabulary(

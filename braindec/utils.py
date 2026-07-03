@@ -7,10 +7,7 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import torch
-from neuromaps import transforms
-from neuromaps.datasets import fetch_atlas
 from nibabel.gifti import GiftiDataArray
-from nilearn.surface import PolyMesh, SurfaceImage, load_surf_mesh
 from nimare.utils import get_resource_path
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
@@ -98,6 +95,11 @@ def _get_device():
         return torch.device("cpu")  # Default to CPU
 
 
+def images_have_same_fov(img, reference_img):
+    """Return whether two Niimg-like objects share shape and affine."""
+    return img.shape[:3] == reference_img.shape[:3] and np.allclose(img.affine, reference_img.affine)
+
+
 def _zero_medial_wall(
     data_lh,
     data_rh,
@@ -107,6 +109,8 @@ def _zero_medial_wall(
     neuromaps_dir=None,
 ):
     """Remove medial wall from data in fsLR space."""
+    from neuromaps.datasets import fetch_atlas
+
     atlas = fetch_atlas(space, density, data_dir=neuromaps_dir, verbose=0)
 
     medial_lh, medial_rh = atlas["medial"]
@@ -175,6 +179,8 @@ def _rm_medial_wall(
     `data` has the incorrect number of vertices (59412 or 64984 only
         accepted)
     """
+    from neuromaps.datasets import fetch_atlas
+
     assert data_lh.shape[0] == N_VERTICES_PH[space][density]
     assert data_rh.shape[0] == N_VERTICES_PH[space][density]
 
@@ -205,6 +211,8 @@ def _vol_to_surf(
     neuromaps_dir=None,
 ):
     """Transform 4D metamaps from volume to surface space."""
+    from neuromaps import transforms
+
     if space == "fsLR":
         metamap_lh, metamap_rh = transforms.mni152_to_fslr(metamap, fslr_density=density)
     elif space == "fsaverage":
@@ -245,6 +253,8 @@ def _vol_surfimg(
     density="32k",
     neuromaps_dir=None,
 ):
+    from nilearn.surface import PolyMesh, SurfaceImage, load_surf_mesh
+
     lh_data, rh_data, atlas = _vol_to_surf(
         vol,
         space=space,
