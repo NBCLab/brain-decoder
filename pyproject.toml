@@ -48,6 +48,8 @@ doc = [
 
 plotting = ["neuromaps", "surfplot"]
 
+app = ["gradio"]
+
 dev = ["black", "pre-commit", "isort", "flake8-pyproject"]
 # For testing of oldest usable versions of dependencies.
 min = ["nimare==0.2.1"]
@@ -68,7 +70,7 @@ devs = ["braindec[dev]"]
 tests = ["braindec[test]"]
 plottings = ["braindec[plotting]"]
 minimum = ["braindec[min]"]
-all = ["braindec[doc,dev,test,plotting]"]
+all = ["braindec[doc,dev,test,plotting,app]"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["braindec"]

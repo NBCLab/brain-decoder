@@ -1,3 +1,17 @@
+---
+title: NiCLIP Brain Decoder
+emoji: 🧠
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: 6.19.0
+app_file: app.py
+short_description: Upload a brain activation map, get predicted cognitive tasks
+python_version: "3.12"
+startup_duration_timeout: 30m
+pinned: false
+---
+
 # NiCLIP
 
 `Warning:` README is currently in progress. Please check back later.

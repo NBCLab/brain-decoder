@@ -10,6 +10,7 @@ from nilearn.image import concat_imgs, load_img, new_img_like, resample_to_img
 from nilearn.maskers import NiftiMapsMasker, SurfaceMapsMasker
 from nimare.dataset import Dataset
 from nimare.meta.kernel import MKDAKernel
+from scipy.linalg import cho_factor, cho_solve
 from tqdm import tqdm
 
 from braindec.utils import _get_device, _vol_surfimg, images_have_same_fov
@@ -21,6 +22,13 @@ def _coordinates_to_image(dset: Dataset, kernel: str = "mkda"):
     else:
         raise ValueError(f"Kernel {kernel} not supported.")
     return kernel.transform(dset, return_type="image")
+
+
+def _get_fdata_float32(image):
+    try:
+        return image.get_fdata(dtype=np.float32, caching="unchanged")
+    except TypeError:
+        return image.get_fdata(dtype=np.float32)
 
 
 class TextEmbedding:
@@ -309,7 +317,7 @@ class ImageEmbedding:
     @staticmethod
     def _sanitize_image(image):
         image = load_img(image)
-        image_data = image.get_fdata()
+        image_data = _get_fdata_float32(image)
         if np.isfinite(image_data).all():
             return image
 
@@ -331,15 +339,22 @@ class ImageEmbedding:
             if reference_img is not None and not images_have_same_fov(atlas_img, reference_img):
                 atlas_img = resample_to_img(atlas_img, reference_img, interpolation="continuous")
 
-            maps_data = atlas_img.get_fdata(dtype=np.float32)
-            maps_data = np.nan_to_num(maps_data, nan=0.0, posinf=0.0, neginf=0.0)
-            maps_gram = np.tensordot(
+            maps_data = _get_fdata_float32(atlas_img)
+            maps_data = np.nan_to_num(
                 maps_data,
-                maps_data,
-                axes=([0, 1, 2], [0, 1, 2]),
-            ).astype(np.float32)
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+                copy=False,
+            )
+            maps_matrix = maps_data.reshape(-1, maps_data.shape[-1])
+            maps_mask = np.any(maps_matrix != 0, axis=1)
+            maps_matrix = np.ascontiguousarray(maps_matrix[maps_mask], dtype=np.float32)
+            maps_matrix_t = np.ascontiguousarray(maps_matrix.T)
+            maps_gram = (maps_matrix.T @ maps_matrix).astype(np.float32)
             maps_gram += np.eye(maps_gram.shape[0], dtype=np.float32) * 1e-6
-            self._maps_cache[cache_key] = (maps_data, maps_gram)
+            maps_factor = cho_factor(maps_gram, lower=True, check_finite=False)
+            self._maps_cache[cache_key] = (maps_matrix_t, maps_mask, maps_factor)
 
         return self._maps_cache[cache_key]
 
@@ -347,14 +362,21 @@ class ImageEmbedding:
         image = self._sanitize_image(images)
         if not images_have_same_fov(image, self.atlas_maps):
             image = resample_to_img(image, self.atlas_maps, interpolation="continuous")
-        image_data = image.get_fdata(dtype=np.float32)
-        image_data = np.nan_to_num(image_data, nan=0.0, posinf=0.0, neginf=0.0)
+        image_data = _get_fdata_float32(image)
+        image_data = np.nan_to_num(
+            image_data,
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+            copy=False,
+        )
         if image_data.ndim == 3:
             image_data = image_data[..., None]
 
-        maps_data, maps_gram = self._get_maps_data(None)
-        xty = np.tensordot(maps_data, image_data, axes=([0, 1, 2], [0, 1, 2])).astype(np.float32)
-        embeddings = np.linalg.solve(maps_gram, xty).T
+        maps_matrix_t, maps_mask, maps_factor = self._get_maps_data(None)
+        image_matrix = image_data.reshape(-1, image_data.shape[-1])[maps_mask]
+        xty = (maps_matrix_t @ image_matrix).astype(np.float32)
+        embeddings = cho_solve(maps_factor, xty, check_finite=False).T
         if embeddings.ndim == 1:
             embeddings = embeddings[None, :]
 
